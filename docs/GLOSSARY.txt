@@ -1,0 +1,268 @@
+OPTIONS ANALYZER - GLOSSARY OF TERMS
+=====================================
+
+
+================================================================================
+BASIC OPTION TERMS
+================================================================================
+
+OPTION
+  A contract giving the right (not obligation) to buy or sell 100 shares
+  of a stock at a specific price by a specific date.
+
+CALL OPTION
+  Right to BUY 100 shares at the strike price.
+
+PUT OPTION
+  Right to SELL 100 shares at the strike price.
+
+STRIKE PRICE
+  The price at which the option can be exercised.
+
+EXPIRATION DATE
+  The date when the option contract expires.
+
+DTE (Days To Expiration)
+  Number of calendar days until expiration.
+
+PREMIUM
+  The price of the option contract.
+  Selling an option = receiving premium.
+  Buying an option = paying premium.
+
+UNDERLYING
+  The stock or ETF that the option is based on.
+
+CONTRACT
+  One option contract controls 100 shares.
+  Premium of $1.00 = $100 per contract.
+
+
+================================================================================
+OPTION POSITIONING
+================================================================================
+
+ITM (In The Money)
+  Call: Stock price > Strike price
+  Put: Stock price < Strike price
+  Has intrinsic value.
+
+OTM (Out of The Money)
+  Call: Stock price < Strike price
+  Put: Stock price > Strike price
+  No intrinsic value, only time value.
+
+ATM (At The Money)
+  Stock price ≈ Strike price
+
+MONEYNESS
+  How ITM or OTM an option is.
+  Calculated as: Strike / Stock Price
+  Moneyness of 0.95 means strike is 5% below current price.
+
+
+================================================================================
+THE GREEKS
+================================================================================
+
+DELTA
+  How much option price changes per $1 move in stock.
+  Call delta: 0 to 1 (positive)
+  Put delta: -1 to 0 (negative)
+  Also approximates probability of expiring ITM.
+  Delta of 0.30 ≈ 30% chance of being ITM at expiration.
+
+GAMMA
+  How much delta changes per $1 move in stock.
+  Higher near ATM, increases as expiration approaches.
+  Risk for short options: gamma can cause rapid delta changes.
+
+THETA
+  How much option price decays per day (time decay).
+  Positive for sellers: you profit as time passes.
+  Accelerates as expiration approaches.
+  Measured in $/day per contract.
+
+VEGA
+  How much option price changes per 1% change in IV.
+  Higher for longer-dated options.
+  Sellers benefit when IV decreases (negative vega position).
+
+RHO
+  How much option price changes per 1% change in interest rates.
+  Usually negligible for short-term options.
+
+
+================================================================================
+VOLATILITY TERMS
+================================================================================
+
+IV (Implied Volatility)
+  Market's expectation of future volatility.
+  Derived from option prices.
+  Higher IV = higher option prices.
+
+HV (Historical Volatility)
+  Actual past volatility of the stock.
+  Calculated from historical price movements.
+
+IV RANK
+  Current IV relative to 52-week high and low.
+  IV Rank 50% = IV is midway between yearly high and low.
+
+IV PERCENTILE
+  Percentage of days when IV was lower than today.
+  IV Percentile 80% = IV was lower on 80% of trading days.
+
+TERM STRUCTURE
+  How ATM IV varies across different expirations.
+  Contango: Near-term IV < Far-term IV (normal)
+  Backwardation: Near-term IV > Far-term IV (event expected)
+
+SKEW
+  Difference in IV between OTM puts and OTM calls.
+  Positive skew: Puts more expensive (fear of downside)
+  Negative skew: Calls more expensive (bullish speculation)
+
+25-DELTA SKEW
+  Specifically: 25-delta put IV minus 25-delta call IV
+  Standard measure of skew in professional trading.
+
+VOLATILITY SURFACE
+  3D representation of IV across strikes and expirations.
+
+
+================================================================================
+STRATEGY TERMS
+================================================================================
+
+CREDIT
+  Receiving money when opening a position (selling options).
+
+DEBIT
+  Paying money when opening a position (buying options).
+
+SPREAD
+  Buying and selling options simultaneously to limit risk.
+  Vertical spread: Same expiration, different strikes.
+
+CREDIT SPREAD
+  Selling one option, buying another further OTM.
+  Receive net credit at open.
+  Defined risk (can't lose more than spread width minus credit).
+
+PUT CREDIT SPREAD (Bull Put Spread)
+  Sell put, buy lower strike put.
+  Bullish/neutral strategy.
+  Profit when stock stays above short strike.
+
+CALL CREDIT SPREAD (Bear Call Spread)
+  Sell call, buy higher strike call.
+  Bearish/neutral strategy.
+  Profit when stock stays below short strike.
+
+IRON CONDOR
+  Put credit spread + Call credit spread together.
+  Neutral strategy, profit when stock stays in range.
+
+CASH SECURED PUT (CSP)
+  Selling a put with cash set aside to buy shares if assigned.
+  Collateral = Strike x 100.
+
+COVERED CALL
+  Selling a call while owning 100 shares.
+  Already "covered" by stock ownership.
+
+SPREAD WIDTH
+  Distance between strikes in a spread.
+  $5 wide spread: strikes are $5 apart.
+
+
+================================================================================
+RISK/RETURN TERMS
+================================================================================
+
+MAX PROFIT
+  Most you can make on the trade.
+  For credit strategies: Premium received.
+
+MAX LOSS
+  Most you can lose on the trade.
+  For spreads: Spread width - Premium received.
+
+BREAKEVEN
+  Stock price where you neither profit nor lose.
+  CSP: Strike - Premium
+  Credit spread: Short strike ± Credit (depending on put/call)
+
+COLLATERAL (MARGIN)
+  Capital required to secure the position.
+  CSP: Strike x 100
+  Credit spread: Max loss
+
+RETURN ON COLLATERAL
+  Premium received / Collateral required
+  What you make relative to capital at risk.
+
+PROBABILITY OF PROFIT (POP)
+  Chance the trade makes at least $0.01.
+  Approximated by: 1 - |delta of short option|
+
+EXPECTED VALUE (EV)
+  Probability-weighted average outcome.
+  EV = (Prob Win x Profit) - (Prob Lose x Loss)
+
+
+================================================================================
+LIQUIDITY TERMS
+================================================================================
+
+BID
+  Price buyers are willing to pay.
+  You receive this when selling.
+
+ASK
+  Price sellers are asking.
+  You pay this when buying.
+
+BID-ASK SPREAD
+  Difference between ask and bid.
+  Tighter = more liquid.
+  Wide spread = harder to get good fills.
+
+VOLUME
+  Number of contracts traded today.
+  Higher = more liquid.
+
+OPEN INTEREST (OI)
+  Total number of outstanding contracts.
+  Higher = more liquid.
+  Shows how many contracts exist.
+
+SLIPPAGE
+  Difference between expected price and actual fill price.
+  Wider bid-ask = more potential slippage.
+
+
+================================================================================
+ANALYSIS TERMS
+================================================================================
+
+Z-SCORE
+  Number of standard deviations from the mean.
+  Z-score of 2 = 2 standard deviations above average.
+  Used to detect statistical outliers/anomalies.
+
+CONTANGO
+  Term structure where far-dated options have higher IV.
+  Normal market condition.
+  Signals: calm market, no expected near-term events.
+
+BACKWARDATION
+  Term structure where near-dated options have higher IV.
+  Inverted condition.
+  Signals: expected event, caution advised.
+
+ANOMALY
+  Option with IV significantly different from neighbors.
+  May indicate mispricing or informed trading.

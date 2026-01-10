@@ -1,0 +1,193 @@
+OPTIONS ANALYZER - CONFIGURATION GUIDE
+=======================================
+
+All configuration is in: core/config.py
+
+You can modify settings either:
+1. By editing config.py directly
+2. Via command line arguments
+3. Programmatically when using as a library
+
+
+================================================================================
+TRADE CRITERIA (TradeCriteria class)
+================================================================================
+
+These control which trades pass the filter:
+
+PROFITABILITY:
+  min_weekly_return_pct = 1.0    # Minimum 1% return per week target
+  min_annualized_return_pct = 52.0   # For reference (52 weeks x 1%)
+
+PROBABILITY:
+  min_prob_profit = 0.70        # 70% probability of profit minimum
+  min_prob_otm = 0.70           # 70% chance of expiring OTM
+
+TIME:
+  max_dte = 5                   # Maximum 5 days to expiration
+  min_dte = 1                   # Minimum 1 day to expiration
+
+GREEKS:
+  max_delta = 0.30              # Maximum delta magnitude (0.30 = ~70% prob OTM)
+  min_theta = 0.0               # Minimum theta (time decay)
+  max_gamma_risk = 0.10         # Maximum gamma exposure
+  max_vega_risk = 0.50          # Maximum vega exposure
+
+LIQUIDITY:
+  min_open_interest = 100       # Minimum open interest
+  min_volume = 50               # Minimum daily volume
+  max_bid_ask_spread_pct = 5.0  # Max spread as % of mid price
+
+PREMIUM:
+  min_premium = 0.10            # Minimum $0.10 premium per contract
+
+SPREADS:
+  min_spread_width = 1.0        # Minimum $1 between strikes
+  max_spread_width = 10.0       # Maximum $10 between strikes
+
+VOLATILITY:
+  min_iv_percentile = 0.0       # Minimum IV percentile (0-100)
+  max_iv_percentile = 100.0     # Maximum IV percentile
+  prefer_high_iv = True         # Prefer selling when IV is elevated
+
+
+================================================================================
+CAPITAL CONFIGURATION (CapitalConfig class)
+================================================================================
+
+Controls position sizing and risk management:
+
+  total_capital = 13000.0       # Your total capital
+  max_single_position_pct = 0.25    # Max 25% in any single trade
+  max_total_exposure_pct = 0.80     # Max 80% deployed at once
+  reserve_cash_pct = 0.20           # Keep 20% as cash reserve
+
+POSITION LIMITS:
+  max_concurrent_positions = 10      # Max 10 positions at once
+  max_positions_per_underlying = 2   # Max 2 positions per symbol
+
+CALCULATED VALUES:
+  max_single_position = $3,250   (13000 x 0.25)
+  max_total_exposure = $10,400   (13000 x 0.80)
+  reserve_cash = $2,600          (13000 x 0.20)
+
+
+================================================================================
+VOLATILITY SURFACE CONFIG (VolatilitySurfaceConfig class)
+================================================================================
+
+Controls volatility analysis:
+
+  strike_range_pct = 0.20       # Analyze strikes +/- 20% from ATM
+  min_strikes_for_surface = 10  # Need 10+ strikes for surface
+
+INTERPOLATION:
+  interpolation_method = "cubic"    # Options: cubic, linear, rbf
+
+ANALYSIS:
+  analyze_skew = True           # Calculate put/call IV skew
+  skew_percentile_threshold = 75.0  # Flag extreme skew above this
+
+  analyze_term_structure = True     # Analyze IV across expirations
+
+  detect_iv_anomalies = True        # Find statistical outliers
+  anomaly_zscore_threshold = 2.0    # Z-score threshold for anomalies
+
+
+================================================================================
+UNDERLYING SYMBOLS (UnderlyingConfig class)
+================================================================================
+
+Which symbols to analyze:
+
+PRICE FILTERING:
+  max_share_price = 120.0   # Filter out symbols above $120/share
+                            # $120 means CSP collateral <= $12,000
+                            # Ensures CSPs fit within your capital
+
+SYMBOL UNIVERSE:
+  The analyzer includes 100+ symbols across categories:
+  - Index ETFs (SPY, QQQ, IWM, DIA, VTI, VOO)
+  - Sector ETFs (XLF, XLE, XLK, XLV, XLI, XLU, etc.)
+  - Commodities (GLD, SLV, GDX, USO, UNG)
+  - Bonds (TLT, IEF, HYG, LQD, JNK)
+  - International (EEM, EFA, FXI, EWZ, VWO)
+  - High IV ETFs (ARKK, XBI, BITO, UVXY)
+  - Individual stocks (tech, finance, healthcare, etc.)
+
+  At runtime, symbols exceeding max_share_price are automatically
+  filtered out. Only symbols with options available are analyzed.
+
+TO CUSTOMIZE:
+  excluded_symbols = []     # Add symbols to exclude
+  custom_symbols = []       # Add your own symbols
+  max_share_price = 80.0    # Lower to be more restrictive
+
+
+================================================================================
+ENABLED STRATEGIES
+================================================================================
+
+In AnalyzerConfig class:
+
+  enabled_strategies = [
+      StrategyType.CASH_SECURED_PUT,
+      StrategyType.PUT_CREDIT_SPREAD,
+      StrategyType.CALL_CREDIT_SPREAD,
+  ]
+
+AVAILABLE OPTIONS:
+  - CASH_SECURED_PUT
+  - COVERED_CALL (requires stock ownership)
+  - PUT_CREDIT_SPREAD
+  - CALL_CREDIT_SPREAD
+
+
+================================================================================
+OTHER SETTINGS
+================================================================================
+
+  risk_free_rate = 0.05     # 5% for Greeks calculations
+  top_n_trades = 20         # Number of trades to display
+
+
+================================================================================
+MODIFYING VIA COMMAND LINE
+================================================================================
+
+Most criteria can be set via CLI without editing config.py:
+
+  --capital 15000           # Override total_capital
+  --prob 0.75               # Override min_prob_profit
+  --return 1.5              # Override min_weekly_return_pct
+  --max-dte 3               # Override max_dte
+  --min-dte 2               # Override min_dte
+  --max-delta 0.25          # Override max_delta
+  --max-price 80            # Override max_share_price filter
+  --top 30                  # Override top_n_trades
+  -s SYM1 SYM2              # Override symbols to analyze
+  --strategies csp put_spread   # Override enabled strategies
+
+
+================================================================================
+MODIFYING PROGRAMMATICALLY
+================================================================================
+
+from analyzer import OptionsAnalyzer
+from core.config import AnalyzerConfig
+
+# Create custom config
+config = AnalyzerConfig()
+config.capital.total_capital = 20000
+config.trade_criteria.min_prob_profit = 0.75
+config.trade_criteria.max_dte = 3
+
+# Create analyzer with custom config
+analyzer = OptionsAnalyzer(config)
+
+# Or update at runtime
+analyzer.update_config(
+    trade_criteria={'min_prob_profit': 0.80}
+)
+
+result = analyzer.run_analysis()

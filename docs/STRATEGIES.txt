@@ -1,0 +1,193 @@
+OPTIONS ANALYZER - STRATEGY GUIDE
+==================================
+
+This document explains each strategy the analyzer supports.
+
+
+================================================================================
+CASH SECURED PUT (CSP)
+================================================================================
+
+WHAT IT IS:
+Sell an out-of-the-money (OTM) put option and hold cash equal to the strike
+price x 100 as collateral.
+
+HOW IT WORKS:
+- You receive premium immediately when you sell the put
+- If the stock stays ABOVE the strike at expiration: you keep the full premium
+- If the stock falls BELOW the strike: you must buy 100 shares at the strike
+
+EXAMPLE:
+- Stock XYZ is trading at $50
+- You sell the $45 put for $0.80 premium
+- You set aside $4,500 cash as collateral (45 x 100)
+- You receive $80 immediately (0.80 x 100)
+
+OUTCOMES:
+- Stock stays above $45: You keep $80, return = $80/$4500 = 1.78%
+- Stock falls to $42: You buy 100 shares at $45, cost basis = $44.20
+
+WHEN TO USE:
+- Bullish or neutral outlook on the stock
+- You'd be happy to own the stock at the strike price
+- IV is elevated (you get more premium)
+
+CAPITAL REQUIRED:
+Strike price x 100 shares
+
+MAX PROFIT: Premium received
+MAX LOSS: Strike price - Premium (if stock goes to $0)
+BREAKEVEN: Strike - Premium per share
+
+
+================================================================================
+PUT CREDIT SPREAD (Bull Put Spread)
+================================================================================
+
+WHAT IT IS:
+Sell an OTM put and simultaneously buy a further OTM put at a lower strike.
+The long put limits your risk.
+
+HOW IT WORKS:
+- Sell the higher strike put (receive premium)
+- Buy the lower strike put (pay premium)
+- Net credit = what you receive - what you pay
+
+EXAMPLE:
+- Stock XYZ is trading at $50
+- Sell the $45 put for $0.80
+- Buy the $43 put for $0.30
+- Net credit = $0.50 ($50 per contract)
+- Spread width = $2 ($200 per contract)
+- Max loss = $200 - $50 = $150
+
+OUTCOMES:
+- Stock stays above $45: Both puts expire worthless, keep $50
+- Stock at $44: Short put has value, long put worthless, partial loss
+- Stock below $43: Max loss of $150 (long put offsets further losses)
+
+WHEN TO USE:
+- Bullish or neutral outlook
+- Want defined risk (can't lose more than spread width - credit)
+- Works on any priced stock (not limited by capital like CSPs)
+
+CAPITAL REQUIRED:
+(Spread width - Credit received) x 100
+
+MAX PROFIT: Net credit received
+MAX LOSS: Spread width - Credit
+BREAKEVEN: Short strike - Credit per share
+
+
+================================================================================
+CALL CREDIT SPREAD (Bear Call Spread)
+================================================================================
+
+WHAT IT IS:
+Sell an OTM call and simultaneously buy a further OTM call at a higher strike.
+The long call limits your risk.
+
+HOW IT WORKS:
+- Sell the lower strike call (receive premium)
+- Buy the higher strike call (pay premium)
+- Net credit = what you receive - what you pay
+
+EXAMPLE:
+- Stock XYZ is trading at $50
+- Sell the $55 call for $0.70
+- Buy the $57 call for $0.25
+- Net credit = $0.45 ($45 per contract)
+- Spread width = $2 ($200 per contract)
+- Max loss = $200 - $45 = $155
+
+OUTCOMES:
+- Stock stays below $55: Both calls expire worthless, keep $45
+- Stock at $56: Short call has value, partial loss
+- Stock above $57: Max loss of $155 (long call offsets further losses)
+
+WHEN TO USE:
+- Bearish or neutral outlook
+- Expect the stock to stay flat or go down
+- Want defined risk
+
+CAPITAL REQUIRED:
+(Spread width - Credit received) x 100
+
+MAX PROFIT: Net credit received
+MAX LOSS: Spread width - Credit
+BREAKEVEN: Short strike + Credit per share
+
+
+================================================================================
+IRON CONDOR (Reference Only - Not Currently Enabled)
+================================================================================
+
+NOTE: Iron Condors are not currently enabled in this analyzer but the
+strategy is documented here for reference.
+
+WHAT IT IS:
+Combine a put credit spread AND a call credit spread on the same underlying
+with the same expiration. Profits when the stock stays in a range.
+
+HOW IT WORKS:
+- Sell OTM put spread (bull put spread)
+- Sell OTM call spread (bear call spread)
+- Collect premium from both sides
+
+EXAMPLE:
+- Stock XYZ is trading at $50
+- Sell $45/$43 put spread for $0.50 credit
+- Sell $55/$57 call spread for $0.45 credit
+- Total credit = $0.95 ($95 per iron condor)
+- Max loss = wider spread width - total credit
+
+OUTCOMES:
+- Stock stays between $45-$55: Keep full $95
+- Stock moves outside range: One side loses, other side wins
+- Only one side can lose at expiration
+
+WHEN TO USE:
+- Neutral outlook (expect low volatility)
+- Stock is range-bound
+- IV is elevated (collect more premium)
+
+CAPITAL REQUIRED:
+Max loss of the wider spread (only one side at risk)
+
+MAX PROFIT: Total credit from both spreads
+MAX LOSS: Wider spread width - Total credit
+BREAKEVENS: Lower short strike - credit AND Upper short strike + credit
+
+
+================================================================================
+STRATEGY COMPARISON
+================================================================================
+
+                    Capital     Max Loss    Direction   Risk
+Strategy            Required    Defined?    Bias        Level
+-----------------------------------------------------------------
+Cash Secured Put    High        Yes*        Bullish     Medium
+Put Credit Spread   Low         Yes         Bullish     Low
+Call Credit Spread  Low         Yes         Bearish     Low
+
+*CSP max loss is strike x 100, which is high but unlikely
+
+
+================================================================================
+CHOOSING A STRATEGY
+================================================================================
+
+Use CASH SECURED PUT when:
+- You have capital for full collateral
+- You'd happily own the stock at that price
+- Symbol has lower share price (<$120 for $13k capital)
+
+Use PUT CREDIT SPREAD when:
+- Bullish/neutral but want defined risk
+- Symbol is too expensive for CSP
+- Want to use less capital
+
+Use CALL CREDIT SPREAD when:
+- Bearish/neutral outlook
+- Stock has run up and you expect consolidation
+- Want defined risk on the downside

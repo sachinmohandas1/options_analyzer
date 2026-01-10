@@ -1,0 +1,94 @@
+OPTIONS ANALYZER - QUICK START GUIDE
+=====================================
+
+INSTALLATION
+------------
+1. Open terminal and navigate to the options_analyzer folder:
+   cd C:\Users\sachi\options_analyzer
+
+2. Install dependencies:
+   pip install -r requirements.txt
+
+3. (Optional) For faster calculations:
+   pip install py_vollib_vectorized numba
+
+
+BASIC USAGE
+-----------
+Run with default settings ($13k capital, 70% prob, 1% weekly return, 5 DTE):
+   python main.py
+
+Analyze specific symbols only:
+   python main.py -s IWM SLV EEM XLF
+
+Set custom criteria:
+   python main.py --capital 15000 --prob 0.75 --return 1.5 --max-dte 3
+
+Interactive mode (browse and explore trades):
+   python main.py -i
+
+Export to JSON for further analysis:
+   python main.py --json > results.json
+
+
+COMMAND LINE OPTIONS
+--------------------
+-s, --symbols      Symbols to analyze (space separated)
+--capital          Total capital available (default: 13000)
+--prob             Minimum probability of profit 0-1 (default: 0.70)
+--return           Minimum weekly return % (default: 1.0)
+--max-dte          Maximum days to expiration (default: 5)
+--min-dte          Minimum days to expiration (default: 1)
+--max-delta        Maximum delta for short options (default: 0.30)
+--max-price        Maximum share price filter (default: 120)
+--top              Number of top trades to show (default: 20)
+--strategies       Which strategies: csp, put_spread, call_spread
+--no-vol           Skip volatility surface analysis (faster)
+--full-scan        Scan S&P 500 + Nasdaq 100 + ETFs (~600 symbols)
+-i, --interactive  Interactive browsing mode
+-v, --verbose      Show additional columns (delta, theta, IV rank)
+--json             Output as JSON instead of tables
+
+
+UNDERSTANDING THE OUTPUT
+------------------------
+The main table shows:
+- Strategy: Type of trade (Cash Secured Put, Put Credit Spread, etc.)
+- Symbol: The underlying ETF
+- DTE: Days to expiration
+- Strike(s): Strike price(s) involved
+- Premium: Cash you receive for the trade
+- Collateral: Cash required to secure the position
+- Return %: Your return on collateral for THIS trade
+- Prob: Probability of profit (based on delta)
+- Score: Overall attractiveness score (0-100)
+
+Green = good, Yellow = acceptable, Red = below threshold
+
+
+EXAMPLE WORKFLOW
+----------------
+1. Run analysis:
+   python main.py -s IWM SLV EEM --top 10
+
+2. Review the top candidates table
+
+3. For more detail on a specific trade, use interactive mode:
+   python main.py -s IWM SLV EEM -i
+   Then enter the trade number to see full details
+
+4. Check the volatility insights section for market context
+
+5. Place your trade through your broker
+
+
+TIPS
+----
+- Run the analyzer when markets are open for live option prices
+- The analyzer automatically filters symbols above $120 (configurable)
+- Focus on symbols with lower share prices for cash-secured puts
+- Credit spreads work on any symbol regardless of price
+- Higher IV rank (>50%) is generally better for selling premium
+- Watch for "backwardation" warnings - indicates expected volatility
+- Use --max-price 80 to filter to even cheaper symbols
+- Use --full-scan for comprehensive market coverage (takes 5-10 minutes)

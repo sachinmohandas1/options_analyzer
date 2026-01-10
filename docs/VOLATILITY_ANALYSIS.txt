@@ -1,0 +1,230 @@
+OPTIONS ANALYZER - VOLATILITY SURFACE ANALYSIS
+===============================================
+
+This document explains the volatility analysis features and how to interpret them.
+
+
+================================================================================
+WHAT IS A VOLATILITY SURFACE?
+================================================================================
+
+Implied Volatility (IV) varies across:
+1. Strike prices (the "skew" or "smile")
+2. Expiration dates (the "term structure")
+
+Together, these form a 3D "surface" of IV values.
+
+Why it matters for selling premium:
+- Higher IV = higher option prices = more premium collected
+- IV patterns reveal market sentiment and potential mispricings
+- Understanding IV helps time entries and select strikes
+
+
+================================================================================
+IV RANK
+================================================================================
+
+WHAT IT IS:
+Where current IV sits relative to its 52-week range.
+
+FORMULA:
+IV Rank = (Current IV - 52-week Low) / (52-week High - 52-week Low) x 100
+
+INTERPRETATION:
+  0-25%   = LOW IV    - Options are cheap, not ideal for selling
+  25-50%  = MODERATE  - Acceptable for premium selling
+  50-75%  = ELEVATED  - Good for selling premium
+  75-100% = HIGH IV   - Excellent for selling premium
+
+EXAMPLE:
+  52-week IV range: 15% to 45%
+  Current IV: 35%
+  IV Rank = (35-15)/(45-15) x 100 = 67%
+  Interpretation: IV is in the upper third of its range - favorable for selling
+
+
+================================================================================
+IV PERCENTILE
+================================================================================
+
+WHAT IT IS:
+Percentage of days in the past year when IV was LOWER than today.
+
+EXAMPLE:
+  IV Percentile = 80%
+  Meaning: IV was lower than today on 80% of trading days
+  Interpretation: Current IV is relatively high
+
+DIFFERENCE FROM IV RANK:
+- IV Rank: Position within the range (uses only high/low)
+- IV Percentile: How often IV was lower (uses all historical values)
+
+Both being high = strong signal to sell premium
+
+
+================================================================================
+TERM STRUCTURE
+================================================================================
+
+WHAT IT IS:
+How ATM IV changes across different expiration dates.
+
+TYPES:
+
+CONTANGO (Normal):
+  Near-term IV < Far-term IV
+  The curve slopes upward
+
+  What it means:
+  - Market is calm, no expected near-term events
+  - Normal state for most underlyings
+  - Favorable for selling near-term options
+
+BACKWARDATION (Inverted):
+  Near-term IV > Far-term IV
+  The curve slopes downward
+
+  What it means:
+  - Market expects volatility soon (earnings, events, fear)
+  - Near-term options are expensive relative to far-term
+  - CAUTION signal - there may be a reason for elevated near-term IV
+
+FLAT:
+  IV is similar across expirations
+
+  What it means:
+  - No strong expectations either way
+  - Neutral market sentiment
+
+TRADING IMPLICATIONS:
+- Contango: Safe to sell near-term premium
+- Backwardation: Be cautious, investigate why before selling
+- Check for upcoming earnings, Fed meetings, economic data
+
+
+================================================================================
+SKEW ANALYSIS
+================================================================================
+
+WHAT IT IS:
+The difference in IV between puts and calls at similar delta levels.
+
+25-DELTA SKEW:
+  Skew = 25-delta Put IV - 25-delta Call IV
+
+  25-delta options are roughly 1 standard deviation OTM
+
+INTERPRETATION:
+
+POSITIVE SKEW (Puts more expensive):
+  - Typical for equities (fear of downside)
+  - Market is paying more for downside protection
+  - Bearish sentiment embedded in options
+
+NEGATIVE SKEW (Calls more expensive):
+  - Unusual, indicates bullish speculation
+  - Market is paying for upside exposure
+  - Can happen during strong rallies
+
+EXTREME SKEW:
+  - Very high positive skew = extreme fear
+  - May indicate opportunity to sell puts (if you're contrarian)
+  - Or warning of expected downside move
+
+SKEW SIGNAL:
+  "bullish"  = Calls expensive, market expects upside
+  "bearish"  = Puts expensive, market expects downside
+  "neutral"  = Balanced, no strong directional bias
+
+
+================================================================================
+ANOMALY DETECTION
+================================================================================
+
+WHAT IT IS:
+Finding options with IV significantly different from neighbors.
+
+HOW IT WORKS:
+- Calculate z-score of each option's IV vs others at same expiration
+- Flag options where |z-score| > threshold (default: 2.0)
+
+WHAT ANOMALIES MIGHT INDICATE:
+
+HIGH IV OUTLIERS (z-score > 2):
+  - Option may be overpriced
+  - Potential selling opportunity
+  - Could indicate specific strike-level demand
+
+LOW IV OUTLIERS (z-score < -2):
+  - Option may be underpriced
+  - Potential buying opportunity (for hedging)
+  - Could indicate lack of interest at that strike
+
+CAUTION:
+- Anomalies aren't always mispricings
+- Could be illiquidity (wide bid-ask)
+- Could be informed trading (someone knows something)
+- Always check liquidity before trading anomalies
+
+
+================================================================================
+VOLATILITY SIGNALS IN OUTPUT
+================================================================================
+
+When you run the analyzer, you'll see volatility insights like:
+
+  Volatility Analysis - IWM
+  IV Rank: 67.5%                    <- Good for selling
+  IV Percentile: 72.3%              <- Confirms elevated IV
+  Term Structure: Contango          <- Normal, safe to sell
+  Signal: vol_selling_favorable     <- Green light
+
+  Skew by Expiration:
+    2024-01-19 (5DTE): Skew=2.15%, Signal=neutral
+
+  Recommendations:
+    SELL_PREMIUM: IV rank 67% with contango term structure
+
+  Anomalies Detected:
+    2024-01-19: Strike 180.0, IV=45.2%, Z=2.34   <- Potential overpriced
+
+
+================================================================================
+USING VOLATILITY ANALYSIS IN TRADING
+================================================================================
+
+IDEAL CONDITIONS FOR SELLING PREMIUM:
+  [x] IV Rank > 50%
+  [x] IV Percentile > 50%
+  [x] Term structure in contango
+  [x] Skew signal matches your directional bias
+  [x] No anomalies at your strike (or trading the anomaly intentionally)
+
+CAUTION FLAGS:
+  [ ] IV Rank < 25% - Premium is low, may not be worth the risk
+  [ ] Backwardation - Something may be brewing
+  [ ] Extreme skew - Market has strong expectations
+  [ ] Your strike is a low IV anomaly - May be cheap for a reason
+
+EXAMPLE DECISION PROCESS:
+  1. Check IV rank - Is it >50%? Good for selling
+  2. Check term structure - Contango? Safe to proceed
+  3. Check skew - Does it align with your view?
+  4. Select strike based on delta and anomaly analysis
+  5. Enter trade if all criteria pass
+
+
+================================================================================
+LIMITATIONS
+================================================================================
+
+- IV metrics are calculated from historical volatility as a proxy
+  (yfinance doesn't provide historical IV data)
+- Surface interpolation may fail with limited data (1-2 expirations)
+- Skew calculations require options with delta values
+- Anomaly detection works best with liquid option chains
+
+For professional-grade IV analysis, consider paid data providers like:
+- CBOE LiveVol
+- OptionMetrics
+- Bloomberg Terminal

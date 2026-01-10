@@ -1,0 +1,360 @@
+OPTIONS ANALYZER - ARCHITECTURE GUIDE
+======================================
+
+This document explains the code structure for developers who want to
+modify or extend the system.
+
+
+================================================================================
+DIRECTORY STRUCTURE
+================================================================================
+
+options_analyzer/
+│
+├── main.py                 # CLI entry point
+├── analyzer.py             # Main orchestrator class
+├── requirements.txt        # Python dependencies
+├── setup.py               # Package installation
+│
+├── core/                  # Core data structures
+│   ├── __init__.py
+│   ├── config.py          # All configuration classes
+│   └── models.py          # Data models (OptionContract, TradeCandidate, etc.)
+│
+├── data/                  # Data fetching
+│   ├── __init__.py
+│   ├── fetcher.py         # yfinance data provider
+│   └── discovery.py       # Symbol discovery and price filtering
+│
+├── analysis/              # Analysis modules
+│   ├── __init__.py
+│   ├── greeks.py          # Greeks calculations
+│   ├── volatility_surface.py  # Vol surface analysis
+│   └── position_sizer.py  # Position sizing logic
+│
+├── strategies/            # Trading strategies
+│   ├── __init__.py
+│   ├── base.py            # BaseStrategy abstract class
+│   ├── secured_premium.py # CSP, Covered Calls
+│   └── credit_spreads.py  # Put/Call credit spreads
+│
+├── ui/                    # User interface
+│   ├── __init__.py
+│   └── display.py         # Rich terminal output
+│
+└── docs/                  # Documentation
+    ├── QUICKSTART.txt
+    ├── STRATEGIES.txt
+    ├── CONFIGURATION.txt
+    ├── VOLATILITY_ANALYSIS.txt
+    └── ARCHITECTURE.txt
+
+
+================================================================================
+DATA FLOW
+================================================================================
+
+1. USER INPUT (main.py)
+   │
+   ▼
+2. CONFIGURATION (core/config.py)
+   │  - Parse CLI args
+   │  - Build AnalyzerConfig
+   │
+   ▼
+3. SYMBOL DISCOVERY (data/discovery.py)
+   │  - Fetch current prices for all symbols
+   │  - Filter by max_share_price ($120 default)
+   │  - Check options availability
+   │
+   ▼
+4. DATA FETCHING (data/fetcher.py)
+   │  - Fetch options chains from yfinance
+   │  - Create OptionsChain objects
+   │
+   ▼
+5. GREEKS CALCULATION (analysis/greeks.py)
+   │  - Calculate delta, gamma, theta, vega
+   │  - Enrich OptionContract objects
+   │
+   ▼
+6. VOLATILITY ANALYSIS (analysis/volatility_surface.py)
+   │  - Build volatility surface
+   │  - Calculate skew, term structure
+   │  - Detect anomalies
+   │
+   ▼
+7. STRATEGY EXECUTION (strategies/*.py)
+   │  - Each strategy finds candidates
+   │  - Calculate trade metrics
+   │  - Filter by criteria
+   │  - Score candidates
+   │
+   ▼
+8. POSITION SIZING (analysis/position_sizer.py)
+   │  - Filter by capital constraints
+   │  - Calculate max contracts
+   │
+   ▼
+9. OUTPUT (ui/display.py)
+      - Format tables
+      - Display results
+
+
+================================================================================
+CORE CLASSES
+================================================================================
+
+AnalyzerConfig (core/config.py)
+-------------------------------
+Main configuration container. Contains:
+  - TradeCriteria: Filtering thresholds
+  - CapitalConfig: Position sizing rules
+  - VolatilitySurfaceConfig: Vol analysis settings
+  - UnderlyingConfig: Symbols to analyze
+  - enabled_strategies: Which strategies to run
+
+OptionContract (core/models.py)
+-------------------------------
+Represents a single option contract:
+  - Symbol, strike, expiration, type (put/call)
+  - Bid, ask, last price, volume, open interest
+  - Implied volatility
+  - Greeks (delta, gamma, theta, vega, rho)
+  - Derived: dte, moneyness, mid_price, prob_otm
+
+OptionsChain (core/models.py)
+-----------------------------
+Complete options chain for one underlying:
+  - underlying_symbol, underlying_price
+  - List of calls, list of puts
+  - Expirations available
+  - IV rank, IV percentile, historical volatility
+
+TradeCandidate (core/models.py)
+-------------------------------
+A potential trade opportunity:
+  - Strategy name, underlying, legs (OptionContracts)
+  - Metrics: max_profit, max_loss, premium, collateral
+  - Returns: return_on_collateral, weekly_return, annualized
+  - Probabilities: prob_profit, prob_max_profit, expected_value
+  - Net Greeks: delta, gamma, theta, vega
+  - Volatility: iv_at_entry, iv_rank
+  - Scores: liquidity_score, overall_score
+
+
+================================================================================
+STRATEGY SYSTEM
+================================================================================
+
+All strategies inherit from BaseStrategy (strategies/base.py).
+
+REQUIRED METHODS:
+  name           -> Display name
+  strategy_type  -> Identifier string
+  is_credit_strategy -> True if receives premium
+  find_candidates(chain, surface) -> List[TradeCandidate]
+  calculate_metrics(candidate) -> TradeCandidate
+
+OPTIONAL OVERRIDES:
+  requires_stock_ownership -> For covered calls
+  filter_by_criteria(candidates) -> Custom filtering
+  score_candidate(candidate) -> Custom scoring
+
+
+ADDING A NEW STRATEGY:
+----------------------
+
+1. Create new file or add to existing in strategies/
+
+2. Implement the class:
+
+   from strategies.base import BaseStrategy
+
+   class MyStrategy(BaseStrategy):
+       @property
+       def name(self) -> str:
+           return "My Strategy"
+
+       @property
+       def strategy_type(self) -> str:
+           return "my_strategy"
+
+       @property
+       def is_credit_strategy(self) -> bool:
+           return True
+
+       def find_candidates(self, chain, surface=None):
+           candidates = []
+           # Your logic to find valid trades
+           for option in chain.puts:
+               if self.is_valid(option):
+                   candidate = self.create_candidate(option, chain)
+                   candidates.append(candidate)
+           return candidates
+
+       def calculate_metrics(self, candidate):
+           # Calculate all return/prob/greek metrics
+           return candidate
+
+3. Register in strategies/__init__.py:
+
+   from strategies.my_strategy import MyStrategy
+
+   STRATEGY_REGISTRY['my_strategy'] = MyStrategy
+
+4. Add to StrategyType enum in core/config.py:
+
+   class StrategyType(Enum):
+       MY_STRATEGY = "my_strategy"
+
+5. Enable in config or CLI
+
+
+================================================================================
+DATA PROVIDER SYSTEM
+================================================================================
+
+The DataFetcher uses a provider pattern for flexibility.
+
+CURRENT PROVIDER:
+YFinanceProvider (data/fetcher.py)
+  - Free data from Yahoo Finance
+  - get_options_chain(symbol) -> OptionsChain
+  - get_historical_volatility(symbol, days) -> float
+
+ADDING A NEW PROVIDER:
+----------------------
+
+1. Implement the DataProvider protocol:
+
+   class MyDataProvider:
+       def get_options_chain(self, symbol: str) -> Optional[OptionsChain]:
+           # Fetch data from your source
+           # Return OptionsChain object
+           pass
+
+       def get_historical_volatility(self, symbol: str, days: int) -> Optional[float]:
+           # Calculate HV from your data
+           pass
+
+2. Use it with DataFetcher:
+
+   provider = MyDataProvider()
+   fetcher = DataFetcher(config, provider=provider)
+
+
+================================================================================
+GREEKS CALCULATION
+================================================================================
+
+Uses py_vollib for Black-Scholes Greeks.
+
+GreeksCalculator (analysis/greeks.py):
+  - calculate_greeks(contract) -> Updates contract in place
+  - calculate_greeks_batch(contracts) -> Vectorized for performance
+  - enrich_chain(chain) -> Calculate Greeks for all contracts
+
+Supports py_vollib_vectorized for faster batch calculations if installed.
+
+
+================================================================================
+SCORING SYSTEM
+================================================================================
+
+Candidates are scored 0-100 for ranking. Default scoring in BaseStrategy:
+
+  Probability of profit:    0-30 points (higher prob = more points)
+  Return on risk:          0-25 points
+  Weekly return:           0-20 points
+  IV rank (for credits):   0-10 points (higher IV = more points)
+  Liquidity score:         0-10 points
+  Theta (for credits):     0-5 points (positive theta = more points)
+
+Override score_candidate() in your strategy for custom scoring.
+
+
+================================================================================
+OUTPUT SYSTEM
+================================================================================
+
+Uses Rich library for terminal output (ui/display.py).
+
+Key functions:
+  display_header()           - App title
+  display_portfolio_summary() - Capital status
+  display_candidates_table()  - Main results table
+  display_trade_detail()      - Single trade deep-dive
+  display_volatility_signals() - Vol analysis
+  display_analysis_summary()   - Run statistics
+  display_menu()              - Interactive mode input
+
+
+================================================================================
+EXTENDING THE SYSTEM
+================================================================================
+
+COMMON CUSTOMIZATIONS:
+
+1. Add new symbols:
+   Edit core/config.py -> UnderlyingConfig.default_symbols
+
+2. Change default criteria:
+   Edit core/config.py -> TradeCriteria defaults
+
+3. Add new strategy:
+   See "ADDING A NEW STRATEGY" section above
+
+4. Use different data source:
+   See "ADDING A NEW PROVIDER" section above
+
+5. Change scoring:
+   Override score_candidate() in your strategy
+
+6. Add new analysis:
+   Create new module in analysis/
+   Call from analyzer.py run_analysis()
+
+7. Change output format:
+   Modify ui/display.py functions
+
+
+================================================================================
+TESTING
+================================================================================
+
+Test the system:
+
+# Quick import test
+python -c "from analyzer import OptionsAnalyzer; print('OK')"
+
+# Test with single symbol
+python main.py -s IWM --top 5
+
+# Test specific strategy
+python main.py -s IWM --strategies put_spread --top 5
+
+# Test JSON output
+python main.py -s IWM --json
+
+# Verbose mode for debugging
+python main.py -s IWM -v
+
+
+================================================================================
+DEPENDENCIES
+================================================================================
+
+REQUIRED:
+  yfinance        - Options data from Yahoo Finance
+  pandas          - Data manipulation
+  numpy           - Numerical operations
+  scipy           - Interpolation for vol surface
+  py_vollib       - Black-Scholes Greeks
+  rich            - Terminal formatting
+  pydantic        - Data validation
+
+OPTIONAL:
+  py_vollib_vectorized - Faster vectorized Greeks
+  numba           - JIT compilation for speed
+  plotly          - Visualization (not currently used)

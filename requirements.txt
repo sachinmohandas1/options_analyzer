@@ -1,0 +1,22 @@
+# Core dependencies
+yfinance>=0.2.40
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Options pricing and Greeks
+py_vollib>=1.0.1
+py_vollib_vectorized>=0.1.1
+scipy>=1.11.0
+
+# Visualization
+plotly>=5.18.0
+rich>=13.7.0
+
+# Data validation
+pydantic>=2.5.0
+
+# Async support
+aiohttp>=3.9.0
+
+# Optional: for faster numerical computation
+numba>=0.58.0
