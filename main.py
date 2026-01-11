@@ -9,6 +9,7 @@ premium selling opportunities.
 import argparse
 import logging
 import sys
+from datetime import datetime, date
 from typing import Optional, List
 
 from analyzer import OptionsAnalyzer, create_analyzer
@@ -23,6 +24,8 @@ from ui.display import (
     display_analysis_summary,
     display_errors,
     display_menu,
+    display_backtest_result,
+    display_backtest_header,
 )
 from analysis.position_sizer import PositionSizer
 
@@ -158,6 +161,48 @@ Examples:
         help='Output results as JSON'
     )
 
+    # Backtesting arguments
+    backtest_group = parser.add_argument_group('Backtesting')
+
+    backtest_group.add_argument(
+        '--backtest',
+        action='store_true',
+        help='Run backtest mode instead of live analysis'
+    )
+
+    backtest_group.add_argument(
+        '--start-date',
+        type=str,
+        help='Backtest start date (YYYY-MM-DD)'
+    )
+
+    backtest_group.add_argument(
+        '--end-date',
+        type=str,
+        help='Backtest end date (YYYY-MM-DD)'
+    )
+
+    backtest_group.add_argument(
+        '--profit-target',
+        type=float,
+        default=0.5,
+        help='Exit at this fraction of max profit (default: 0.5 = 50%%)'
+    )
+
+    backtest_group.add_argument(
+        '--stop-loss',
+        type=float,
+        default=2.0,
+        help='Exit at this multiple of premium received as loss (default: 2.0 = 2x)'
+    )
+
+    backtest_group.add_argument(
+        '--max-positions',
+        type=int,
+        default=5,
+        help='Maximum concurrent positions in backtest (default: 5)'
+    )
+
     return parser.parse_args()
 
 
@@ -198,13 +243,119 @@ def run_interactive(analyzer: OptionsAnalyzer, result):
             console.input()
 
 
+def run_backtest(args):
+    """Run backtest mode."""
+    from backtesting import OptionBacktester, BacktestConfig
+    from backtesting.trade_manager import ExitRules
+    from core.config import TradeCriteria
+
+    # Validate dates
+    if not args.start_date or not args.end_date:
+        console.print("[red]Error: --start-date and --end-date are required for backtesting[/red]")
+        console.print("Example: python main.py --backtest --start-date 2023-01-01 --end-date 2024-01-01 -s SPY QQQ")
+        sys.exit(1)
+
+    try:
+        start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(args.end_date, "%Y-%m-%d").date()
+    except ValueError as e:
+        console.print(f"[red]Error parsing dates: {e}[/red]")
+        console.print("Use format: YYYY-MM-DD")
+        sys.exit(1)
+
+    if start_date >= end_date:
+        console.print("[red]Error: start-date must be before end-date[/red]")
+        sys.exit(1)
+
+    # Get symbols
+    symbols = args.symbols if args.symbols else ["SPY", "QQQ", "IWM"]
+
+    # Map strategies
+    strategy_types = [
+        map_strategy_arg(s) for s in args.strategies
+        if map_strategy_arg(s) is not None
+    ]
+
+    # Build config
+    trade_criteria = TradeCriteria(
+        min_prob_profit=args.prob,
+        min_weekly_return_pct=args.min_return,
+        max_dte=args.max_dte,
+        min_dte=args.min_dte,
+        max_delta=args.max_delta,
+    )
+
+    exit_rules = ExitRules(
+        profit_target_pct=args.profit_target,
+        stop_loss_pct=args.stop_loss,
+    )
+
+    config = BacktestConfig(
+        start_date=start_date,
+        end_date=end_date,
+        symbols=symbols,
+        initial_capital=args.capital,
+        strategy_types=strategy_types,
+        trade_criteria=trade_criteria,
+        exit_rules=exit_rules,
+        max_positions=args.max_positions,
+    )
+
+    # Display header
+    if not args.json:
+        display_backtest_header(config)
+
+    # Run backtest
+    backtester = OptionBacktester(config)
+    result = backtester.run(verbose=not args.json)
+
+    # Output results
+    if args.json:
+        output_backtest_json(result)
+    else:
+        display_backtest_result(result)
+
+    return result
+
+
+def output_backtest_json(result):
+    """Output backtest results as JSON."""
+    import json
+
+    def json_serializer(obj):
+        if isinstance(obj, date):
+            return obj.isoformat()
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if hasattr(obj, 'value'):  # Enum
+            return obj.value
+        raise TypeError(f"Type {type(obj)} not serializable")
+
+    output = result.to_dict()
+    output['trades'] = [
+        {
+            'id': t.id,
+            'symbol': t.symbol,
+            'strategy': t.strategy_type.value,
+            'entry_date': t.entry_date.isoformat() if t.entry_date else None,
+            'exit_date': t.exit_date.isoformat() if t.exit_date else None,
+            'exit_reason': t.exit_reason.value if t.exit_reason else None,
+            'premium': t.premium_received,
+            'pnl': t.realized_pnl,
+            'days_held': t.days_held,
+        }
+        for t in result.trades
+    ]
+
+    print(json.dumps(output, indent=2, default=json_serializer))
+
+
 def output_json(result):
     """Output results as JSON."""
     import json
-    from datetime import date
 
     def json_serializer(obj):
-        if isinstance(obj, (date,)):
+        if isinstance(obj, date):
             return obj.isoformat()
         raise TypeError(f"Type {type(obj)} not serializable")
 
@@ -241,6 +392,11 @@ def main():
     """Main entry point."""
     args = parse_args()
     setup_logging(args.verbose)
+
+    # Check for backtest mode
+    if args.backtest:
+        run_backtest(args)
+        return
 
     # Build configuration
     config = AnalyzerConfig()

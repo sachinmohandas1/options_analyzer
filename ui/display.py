@@ -14,6 +14,11 @@ from rich import box
 
 from core.models import TradeCandidate, AnalysisResult, VolatilitySurface
 from analysis.position_sizer import PositionAllocation
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backtesting.performance import BacktestResult, PerformanceMetrics
+    from backtesting.backtester import BacktestConfig
 
 
 console = Console()
@@ -326,3 +331,178 @@ def display_menu(candidates: List[TradeCandidate]) -> Optional[int]:
     except ValueError:
         console.print("[red]Invalid input[/red]")
         return None
+
+
+def display_backtest_header(config: "BacktestConfig"):
+    """Display backtest configuration header."""
+    header = Panel(
+        Text("BACKTEST MODE", style="bold yellow", justify="center"),
+        subtitle=f"Simulation: {config.start_date} to {config.end_date}",
+        box=box.DOUBLE
+    )
+    console.print(header)
+    console.print()
+
+    console.print(f"[cyan]Symbols:[/cyan] {', '.join(config.symbols)}")
+    console.print(f"[cyan]Initial Capital:[/cyan] ${config.initial_capital:,.2f}")
+    console.print(f"[cyan]Strategies:[/cyan] {[s.value for s in config.strategy_types]}")
+    console.print(f"[cyan]Profit Target:[/cyan] {config.exit_rules.profit_target_pct:.0%}")
+    console.print(f"[cyan]Stop Loss:[/cyan] {config.exit_rules.stop_loss_pct:.1f}x premium")
+    console.print(f"[cyan]Max Positions:[/cyan] {config.max_positions}")
+    console.print()
+
+
+def display_backtest_result(result: "BacktestResult"):
+    """Display comprehensive backtest results."""
+    console.print()
+
+    # Performance summary panel
+    metrics = result.metrics
+    return_color = "green" if metrics.total_return_pct > 0 else "red"
+
+    summary_panel = Panel(
+        f"[bold {return_color}]Total Return: {metrics.total_return_pct:.2f}%[/bold {return_color}]\n"
+        f"Final Capital: ${result.final_capital:,.2f}",
+        title="Backtest Complete",
+        box=box.DOUBLE
+    )
+    console.print(summary_panel)
+    console.print()
+
+    # Key metrics table
+    metrics_table = Table(title="Performance Metrics", box=box.ROUNDED)
+    metrics_table.add_column("Metric", style="cyan", width=25)
+    metrics_table.add_column("Value", justify="right", width=15)
+
+    metrics_table.add_row("Total Trades", str(metrics.total_trades))
+    metrics_table.add_row("Winning Trades", f"[green]{metrics.winning_trades}[/green]")
+    metrics_table.add_row("Losing Trades", f"[red]{metrics.losing_trades}[/red]")
+    metrics_table.add_row("Win Rate", f"{metrics.win_rate:.1%}")
+    metrics_table.add_row("", "")  # Separator
+
+    metrics_table.add_row("Total P&L", format_currency(metrics.total_pnl))
+    metrics_table.add_row("Gross Profit", f"[green]{format_currency(metrics.gross_profit)}[/green]")
+    metrics_table.add_row("Gross Loss", f"[red]{format_currency(metrics.gross_loss)}[/red]")
+    metrics_table.add_row("Profit Factor", f"{metrics.profit_factor:.2f}" if metrics.profit_factor != float('inf') else "Inf")
+    metrics_table.add_row("Expectancy", format_currency(metrics.expectancy))
+    metrics_table.add_row("", "")
+
+    metrics_table.add_row("Avg Win", format_currency(metrics.avg_win))
+    metrics_table.add_row("Avg Loss", format_currency(metrics.avg_loss))
+    metrics_table.add_row("Largest Win", f"[green]{format_currency(metrics.largest_win)}[/green]")
+    metrics_table.add_row("Largest Loss", f"[red]{format_currency(metrics.largest_loss)}[/red]")
+    metrics_table.add_row("", "")
+
+    metrics_table.add_row("Max Drawdown", f"[red]{metrics.max_drawdown_pct:.2f}%[/red]")
+    metrics_table.add_row("Sharpe Ratio", f"{metrics.sharpe_ratio:.2f}")
+    metrics_table.add_row("Sortino Ratio", f"{metrics.sortino_ratio:.2f}")
+    metrics_table.add_row("", "")
+
+    metrics_table.add_row("Avg Days Held", f"{metrics.avg_days_held:.1f}")
+    metrics_table.add_row("Annualized Return", f"{metrics.annualized_return_pct:.2f}%")
+
+    console.print(metrics_table)
+    console.print()
+
+    # Exit reason breakdown
+    if metrics.exits_by_reason:
+        exit_table = Table(title="Exit Reasons", box=box.ROUNDED)
+        exit_table.add_column("Reason", style="cyan", width=20)
+        exit_table.add_column("Count", justify="right", width=10)
+        exit_table.add_column("P&L", justify="right", width=15)
+
+        for reason, count in metrics.exits_by_reason.items():
+            pnl = metrics.pnl_by_exit_reason.get(reason, 0)
+            pnl_color = "green" if pnl > 0 else "red"
+            exit_table.add_row(
+                reason.replace("_", " ").title(),
+                str(count),
+                f"[{pnl_color}]{format_currency(pnl)}[/{pnl_color}]"
+            )
+
+        console.print(exit_table)
+        console.print()
+
+    # Strategy breakdown
+    if result.metrics_by_strategy:
+        strategy_table = Table(title="Performance by Strategy", box=box.ROUNDED)
+        strategy_table.add_column("Strategy", style="cyan", width=20)
+        strategy_table.add_column("Trades", justify="right", width=8)
+        strategy_table.add_column("Win Rate", justify="right", width=10)
+        strategy_table.add_column("P&L", justify="right", width=12)
+        strategy_table.add_column("Avg Trade", justify="right", width=10)
+
+        for strategy, strat_metrics in result.metrics_by_strategy.items():
+            pnl_color = "green" if strat_metrics.total_pnl > 0 else "red"
+            strategy_table.add_row(
+                strategy.replace("_", " ").title(),
+                str(strat_metrics.total_trades),
+                f"{strat_metrics.win_rate:.1%}",
+                f"[{pnl_color}]{format_currency(strat_metrics.total_pnl)}[/{pnl_color}]",
+                format_currency(strat_metrics.expectancy)
+            )
+
+        console.print(strategy_table)
+        console.print()
+
+    # Symbol breakdown (top 5)
+    if result.metrics_by_symbol:
+        symbol_table = Table(title="Performance by Symbol (Top 10)", box=box.ROUNDED)
+        symbol_table.add_column("Symbol", style="cyan", width=10)
+        symbol_table.add_column("Trades", justify="right", width=8)
+        symbol_table.add_column("Win Rate", justify="right", width=10)
+        symbol_table.add_column("P&L", justify="right", width=12)
+
+        # Sort by P&L
+        sorted_symbols = sorted(
+            result.metrics_by_symbol.items(),
+            key=lambda x: x[1].total_pnl,
+            reverse=True
+        )[:10]
+
+        for symbol, sym_metrics in sorted_symbols:
+            pnl_color = "green" if sym_metrics.total_pnl > 0 else "red"
+            symbol_table.add_row(
+                symbol,
+                str(sym_metrics.total_trades),
+                f"{sym_metrics.win_rate:.1%}",
+                f"[{pnl_color}]{format_currency(sym_metrics.total_pnl)}[/{pnl_color}]"
+            )
+
+        console.print(symbol_table)
+        console.print()
+
+    # Recent trades
+    if result.trades:
+        trades_table = Table(title="Recent Trades (Last 10)", box=box.ROUNDED)
+        trades_table.add_column("Date", width=12)
+        trades_table.add_column("Symbol", width=8)
+        trades_table.add_column("Strategy", width=18)
+        trades_table.add_column("Exit", width=14)
+        trades_table.add_column("Days", justify="right", width=5)
+        trades_table.add_column("P&L", justify="right", width=12)
+
+        for trade in result.trades[-10:]:
+            pnl = trade.realized_pnl or 0
+            pnl_color = "green" if pnl > 0 else "red"
+            exit_reason = trade.exit_reason.value.replace("_", " ").title() if trade.exit_reason else "Open"
+
+            trades_table.add_row(
+                trade.entry_date.strftime("%Y-%m-%d") if trade.entry_date else "N/A",
+                trade.symbol,
+                trade.strategy_name[:18],
+                exit_reason,
+                str(trade.days_held),
+                f"[{pnl_color}]{format_currency(pnl)}[/{pnl_color}]"
+            )
+
+        console.print(trades_table)
+        console.print()
+
+    # Errors
+    if result.errors:
+        console.print(f"[yellow]Errors during backtest: {len(result.errors)}[/yellow]")
+        for err in result.errors[:5]:
+            console.print(f"  [dim]{err.get('date', 'N/A')}: {err.get('symbol', 'N/A')} - {err.get('error', 'Unknown')}[/dim]")
+
+    console.print(f"\n[dim]Backtest completed in {result.duration_seconds:.1f} seconds[/dim]")

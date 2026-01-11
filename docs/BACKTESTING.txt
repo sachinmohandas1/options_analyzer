@@ -1,0 +1,295 @@
+================================================================================
+                         BACKTESTING SYSTEM DOCUMENTATION
+================================================================================
+
+OVERVIEW
+--------
+The backtesting system allows you to test options trading strategies against
+historical data. Since historical options chain data isn't publicly available,
+the system uses a hybrid approach:
+
+1. Fetches real historical stock prices from Yahoo Finance (up to 10 years)
+2. Calculates historical volatility from price data
+3. Synthesizes options chains using the Black-Scholes model
+
+This gives you a realistic simulation of how your strategies would have
+performed, though synthetic options won't capture real market microstructure
+like bid-ask spreads during high volatility events.
+
+
+QUICK START
+-----------
+Basic 1-month backtest:
+    python main.py --backtest --start-date 2024-01-01 --end-date 2024-02-01 -s SPY
+
+1-year backtest with multiple symbols:
+    python main.py --backtest --start-date 2023-01-01 --end-date 2024-01-01 -s SPY QQQ IWM
+
+10-year backtest (stress test):
+    python main.py --backtest --start-date 2014-01-01 --end-date 2024-01-01 -s SPY
+
+
+CLI OPTIONS
+-----------
+Required:
+    --backtest              Enable backtest mode
+    --start-date YYYY-MM-DD Simulation start date
+    --end-date YYYY-MM-DD   Simulation end date
+
+Optional:
+    -s, --symbols           Symbols to trade (default: SPY QQQ IWM)
+    --capital               Initial capital (default: $13,000)
+    --strategies            Which strategies: csp, put_spread, call_spread
+    --prob                  Minimum probability of profit (default: 0.70)
+    --max-dte               Maximum days to expiration (default: 5)
+    --profit-target         Exit at X% of max profit (default: 0.50 = 50%)
+    --stop-loss             Exit at Xx premium lost (default: 2.0 = 2x)
+    --max-positions         Max concurrent positions (default: 5)
+    --json                  Output results as JSON
+
+
+HOW IT WORKS
+------------
+
+1. DATA LOADING
+   - Fetches daily OHLCV data from Yahoo Finance for the date range
+   - Calculates 30-day rolling historical volatility
+   - Caches data to .backtest_cache/ to avoid repeated API calls
+
+2. OPTIONS CHAIN SYNTHESIS
+   For each trading day, the system generates synthetic options using
+   Black-Scholes:
+
+   - Strikes: 70% to 130% of spot price in appropriate increments
+     ($0.50 for stocks <$25, $1 for <$50, $2.50 for <$200, $5 for >$200)
+
+   - Expirations: Weekly Fridays within your max_dte setting
+
+   - Pricing: Black-Scholes theoretical value with synthetic bid-ask spread
+     (1% spread for ATM, 2% for OTM)
+
+   - Greeks: Delta, gamma, theta, vega calculated via py_vollib
+
+3. DAILY SIMULATION LOOP
+   For each trading day:
+
+   a) Mark-to-market: Update all open positions with current prices
+
+   b) Check exits: Close positions that hit:
+      - Profit target (e.g., 50% of max profit captured)
+      - Stop loss (e.g., lost 2x the premium received)
+      - Expiration (DTE = 0)
+
+   c) Generate entries: If positions available:
+      - Run strategies to find candidates
+      - Filter by criteria (probability, return, delta, etc.)
+      - Enter top-scoring trades
+
+   d) Record daily portfolio value
+
+4. PERFORMANCE CALCULATION
+   After simulation, calculates:
+   - Win rate, profit factor, expectancy
+   - Total P&L, gross profit/loss
+   - Max drawdown, Sharpe ratio, Sortino ratio
+   - Breakdown by strategy, symbol, exit reason
+
+
+EXIT RULES EXPLAINED
+--------------------
+
+PROFIT TARGET (--profit-target 0.5)
+    Close position when unrealized profit reaches 50% of max profit.
+
+    Example: You sell a put spread for $50 credit (max profit = $50).
+    When the spread can be bought back for $25, you've captured 50%
+    of max profit, so the system closes the position.
+
+    Why 50%? The last 50% of profit comes with the most gamma risk
+    (price sensitivity increases near expiration). Closing early
+    locks in gains and frees capital for new trades.
+
+STOP LOSS (--stop-loss 2.0)
+    Close position when loss reaches 2x the premium received.
+
+    Example: You sold a spread for $50 credit. If it would cost
+    $150 to close (loss of $100 = 2x premium), the system exits.
+
+    This limits max loss per trade while allowing some room for
+    the position to recover from temporary adverse moves.
+
+EXPIRATION (exit_dte = 0)
+    If position reaches expiration without hitting profit target
+    or stop loss, P&L is calculated based on where the underlying
+    finished relative to the strikes.
+
+
+STRATEGIES TESTED
+-----------------
+
+CASH-SECURED PUT (csp)
+    Sell OTM put, keep full strike price as collateral.
+    Profit if stock stays above strike.
+
+    Note: Not commonly triggered in backtests because SPY/QQQ
+    prices are often above the $120 max_share_price limit for CSP.
+
+PUT CREDIT SPREAD (put_spread)
+    Sell OTM put, buy further OTM put for protection.
+    Defined risk = spread width - credit received.
+    Profit if stock stays above short strike.
+
+CALL CREDIT SPREAD (call_spread)
+    Sell OTM call, buy further OTM call for protection.
+    Defined risk = spread width - credit received.
+    Profit if stock stays below short strike.
+
+
+UNDERSTANDING THE RESULTS
+-------------------------
+
+WIN RATE
+    Percentage of trades that were profitable.
+    For 70% probability strategies, expect ~70% win rate.
+
+PROFIT FACTOR
+    Gross profit / Gross loss.
+    > 1.0 = profitable system
+    < 1.0 = losing system
+
+    Credit spreads often have profit factor < 1 even with high
+    win rates because losers are larger than winners.
+
+EXPECTANCY
+    Average P&L per trade.
+    Positive = each trade adds value on average.
+
+MAX DRAWDOWN
+    Largest peak-to-trough decline in portfolio value.
+    Shows worst-case scenario you would have experienced.
+
+SHARPE RATIO
+    Risk-adjusted return (return / volatility).
+    > 1.0 = good, > 2.0 = excellent
+
+EXIT REASON BREAKDOWN
+    Shows how trades ended:
+    - Profit Target: Captured gains early (good)
+    - Expiration: Held to expiry (neutral)
+    - Stop Loss: Cut losses (necessary evil)
+
+
+INTERPRETING BACKTEST RESULTS
+-----------------------------
+
+EXAMPLE OUTPUT:
+    Win Rate: 77.3%
+    Total P&L: -$1,402
+    Profit Factor: 0.88
+
+This is a losing system despite 77% win rate. Why?
+
+    Avg Win: $43
+    Avg Loss: -$168
+
+The losers are ~4x larger than winners. This is the nature of
+credit spread trading - you collect small premiums but face
+larger potential losses.
+
+To be profitable, you need EITHER:
+    1. Higher win rate (>80%)
+    2. Smaller stop losses (but may get stopped out more)
+    3. Better trade selection (higher probability, better timing)
+    4. Larger profit targets (hold longer, more risk)
+
+
+LIMITATIONS
+-----------
+
+1. SYNTHETIC DATA
+   Options chains are synthesized, not real historical data.
+   - Doesn't capture volatility spikes during market events
+   - Bid-ask spreads are estimated, not actual
+   - Volume/liquidity constraints not accurately modeled
+
+2. NO SLIPPAGE
+   Assumes fills at mid-price. Real trading has slippage.
+
+3. SIMPLIFIED VOLATILITY
+   Uses historical volatility, not actual implied volatility
+   at each point in time. IV can differ significantly from HV.
+
+4. NO EARLY ASSIGNMENT
+   American options can be assigned early. Not modeled.
+
+5. POINT-IN-TIME DATA
+   Uses daily close prices. Intraday moves not captured.
+
+
+FILE STRUCTURE
+--------------
+
+backtesting/
+    __init__.py           Module exports
+    historical_data.py    Yahoo Finance data + Black-Scholes synthesis
+    backtester.py         Main simulation engine
+    trade_manager.py      Trade lifecycle (entry, hold, exit)
+    performance.py        Metrics calculation
+
+.backtest_cache/          Cached price data (auto-created)
+
+
+PROGRAMMATIC USAGE
+------------------
+
+from datetime import date
+from backtesting import run_backtest
+from core.config import StrategyType
+
+result = run_backtest(
+    symbols=["SPY", "QQQ", "IWM"],
+    start_date=date(2023, 1, 1),
+    end_date=date(2024, 1, 1),
+    initial_capital=13000.0,
+    strategies=[
+        StrategyType.PUT_CREDIT_SPREAD,
+        StrategyType.CALL_CREDIT_SPREAD,
+    ],
+    profit_target=0.5,
+    stop_loss=2.0,
+    max_positions=5,
+    verbose=True
+)
+
+# Access results
+print(f"Total Return: {result.metrics.total_return_pct:.2f}%")
+print(f"Win Rate: {result.metrics.win_rate:.1%}")
+print(f"Total Trades: {result.metrics.total_trades}")
+
+# Export trades
+for trade in result.trades:
+    print(f"{trade.entry_date} {trade.symbol}: ${trade.realized_pnl:.2f}")
+
+
+TIPS FOR ANALYSIS
+-----------------
+
+1. RUN MULTIPLE TIMEFRAMES
+   Test across different market conditions (2020 crash, 2021 bull,
+   2022 bear) to see how strategy performs in each.
+
+2. COMPARE STRATEGIES
+   Run with --strategies put_spread vs --strategies call_spread
+   to see which performs better for each symbol.
+
+3. OPTIMIZE PARAMETERS
+   Try different --profit-target and --stop-loss values to find
+   the optimal exit rules for your strategy.
+
+4. WATCH FOR OVERFITTING
+   If you optimize too much on historical data, results may not
+   generalize to live trading.
+
+5. USE JSON OUTPUT
+   python main.py --backtest ... --json > results.json
+   Then analyze in Python/Excel for deeper insights.
