@@ -9,6 +9,7 @@ A quantitative tool for scanning options chains across index ETFs and identifyin
 - **Configurable Criteria**: Probability thresholds, return targets, DTE limits, delta constraints
 - **Capital Management**: Position sizing with risk limits and portfolio constraints
 - **Rich CLI Interface**: Beautiful terminal output with interactive mode
+- **Backtesting**: Historical strategy testing with up to 10 years of data
 
 ## Installation
 
@@ -94,6 +95,53 @@ The analyzer builds IV surfaces and extracts trading signals:
 - **Skew**: 25-delta put vs call IV differential
 - **Anomalies**: Statistical outliers in IV
 
+## Backtesting
+
+Test your strategies against historical data (up to 10 years). The backtester uses real price data from Yahoo Finance and synthesizes options chains using Black-Scholes modeling.
+
+### Quick Start
+
+```bash
+# Basic 1-month backtest
+python main.py --backtest --start-date 2024-01-01 --end-date 2024-02-01 -s SPY
+
+# 1-year backtest with multiple symbols
+python main.py --backtest --start-date 2023-01-01 --end-date 2024-01-01 -s SPY QQQ IWM
+
+# 10-year stress test
+python main.py --backtest --start-date 2014-01-01 --end-date 2024-01-01 -s SPY
+
+# Custom exit rules
+python main.py --backtest --start-date 2023-01-01 --end-date 2024-01-01 \
+    --profit-target 0.5 --stop-loss 2.0 --max-positions 5
+```
+
+### Backtest Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--backtest` | - | Enable backtest mode |
+| `--start-date` | Required | Backtest start (YYYY-MM-DD) |
+| `--end-date` | Required | Backtest end (YYYY-MM-DD) |
+| `--profit-target` | 0.5 | Exit at X% of max profit (0.5 = 50%) |
+| `--stop-loss` | 2.0 | Exit at X times premium lost (2.0 = 2x) |
+| `--max-positions` | 5 | Maximum concurrent positions |
+
+### How It Works
+
+1. **Data Loading**: Fetches daily OHLCV from Yahoo Finance, calculates 30-day rolling volatility
+2. **Chain Synthesis**: Generates realistic options chains using Black-Scholes pricing
+3. **Daily Simulation**: Iterates through each trading day, managing entries and exits
+4. **Performance Metrics**: Calculates win rate, Sharpe ratio, max drawdown, and more
+
+### Exit Rules
+
+- **Profit Target**: Close when unrealized profit reaches 50% of max profit (captures gains, reduces gamma risk)
+- **Stop Loss**: Close when loss reaches 2x premium received (limits downside)
+- **Expiration**: Settle at expiration based on final underlying price
+
+For detailed documentation, see [docs/BACKTESTING.txt](docs/BACKTESTING.txt).
+
 ## Architecture
 
 ```
@@ -111,6 +159,11 @@ options_analyzer/
 │   ├── base.py        # Base strategy class
 │   ├── secured_premium.py  # CSP, covered calls
 │   └── credit_spreads.py   # Spreads, iron condors
+├── backtesting/
+│   ├── historical_data.py  # Yahoo Finance + Black-Scholes synthesis
+│   ├── backtester.py       # Main simulation engine
+│   ├── trade_manager.py    # Trade lifecycle management
+│   └── performance.py      # Metrics calculation
 ├── ui/
 │   └── display.py     # Terminal display
 ├── analyzer.py        # Main orchestrator
