@@ -119,11 +119,8 @@ BREAKEVEN: Short strike + Credit per share
 
 
 ================================================================================
-IRON CONDOR (Reference Only - Not Currently Enabled)
+IRON CONDOR
 ================================================================================
-
-NOTE: Iron Condors are not currently enabled in this analyzer but the
-strategy is documented here for reference.
 
 WHAT IT IS:
 Combine a put credit spread AND a call credit spread on the same underlying
@@ -169,6 +166,7 @@ Strategy            Required    Defined?    Bias        Level
 Cash Secured Put    High        Yes*        Bullish     Medium
 Put Credit Spread   Low         Yes         Bullish     Low
 Call Credit Spread  Low         Yes         Bearish     Low
+Iron Condor         Low         Yes         Neutral     Low
 
 *CSP max loss is strike x 100, which is high but unlikely
 
@@ -191,3 +189,9 @@ Use CALL CREDIT SPREAD when:
 - Bearish/neutral outlook
 - Stock has run up and you expect consolidation
 - Want defined risk on the downside
+
+Use IRON CONDOR when:
+- Neutral outlook (expect stock to stay in a range)
+- IV is elevated (collect more premium from both sides)
+- Want to profit from time decay with defined risk
+- Stock is consolidating or range-bound

@@ -3,6 +3,7 @@ from strategies.secured_premium import CashSecuredPutStrategy, CoveredCallStrate
 from strategies.credit_spreads import (
     PutCreditSpreadStrategy,
     CallCreditSpreadStrategy,
+    IronCondorStrategy,
 )
 
 __all__ = [
@@ -11,6 +12,7 @@ __all__ = [
     'CoveredCallStrategy',
     'PutCreditSpreadStrategy',
     'CallCreditSpreadStrategy',
+    'IronCondorStrategy',
 ]
 
 # Strategy registry for dynamic loading
@@ -19,6 +21,7 @@ STRATEGY_REGISTRY = {
     'covered_call': CoveredCallStrategy,
     'put_credit_spread': PutCreditSpreadStrategy,
     'call_credit_spread': CallCreditSpreadStrategy,
+    'iron_condor': IronCondorStrategy,
 }
 
 

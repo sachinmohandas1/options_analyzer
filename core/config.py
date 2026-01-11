@@ -14,6 +14,7 @@ class StrategyType(Enum):
     COVERED_CALL = "covered_call"
     PUT_CREDIT_SPREAD = "put_credit_spread"
     CALL_CREDIT_SPREAD = "call_credit_spread"
+    IRON_CONDOR = "iron_condor"
 
 
 @dataclass
@@ -153,6 +154,7 @@ class AnalyzerConfig:
         StrategyType.CASH_SECURED_PUT,
         StrategyType.PUT_CREDIT_SPREAD,
         StrategyType.CALL_CREDIT_SPREAD,
+        StrategyType.IRON_CONDOR,
     ])
     
     risk_free_rate: float = 0.05

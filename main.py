@@ -126,9 +126,9 @@ Examples:
     parser.add_argument(
         '--strategies',
         nargs='+',
-        choices=['csp', 'put_spread', 'call_spread'],
-        default=['csp', 'put_spread', 'call_spread'],
-        help='Strategies to use (default: csp put_spread call_spread)'
+        choices=['csp', 'put_spread', 'call_spread', 'iron_condor'],
+        default=['csp', 'put_spread', 'call_spread', 'iron_condor'],
+        help='Strategies to use (default: csp put_spread call_spread iron_condor)'
     )
 
     parser.add_argument(
@@ -212,6 +212,7 @@ def map_strategy_arg(arg: str) -> StrategyType:
         'csp': StrategyType.CASH_SECURED_PUT,
         'put_spread': StrategyType.PUT_CREDIT_SPREAD,
         'call_spread': StrategyType.CALL_CREDIT_SPREAD,
+        'iron_condor': StrategyType.IRON_CONDOR,
     }
     return mapping.get(arg)
 

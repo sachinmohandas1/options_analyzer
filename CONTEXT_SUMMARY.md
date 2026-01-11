@@ -14,9 +14,10 @@ An options analysis tool for premium selling strategies designed for a trader wi
 1. **Cash-Secured Puts (CSP)** - Sell OTM puts with cash collateral = strike × 100
 2. **Put Credit Spreads** - Sell OTM put, buy further OTM put (defined risk)
 3. **Call Credit Spreads** - Sell OTM call, buy further OTM call (defined risk)
-4. **Covered Calls** - Strategy exists in code but NOT enabled in CLI yet (user was considering adding it)
+4. **Iron Condors** - Combine put spread + call spread for neutral outlook (defined risk)
+5. **Covered Calls** - Strategy exists in code but NOT enabled in CLI (requires stock ownership tracking)
 
-**NOT supported (by design):** Naked calls, naked puts, iron condors
+**NOT supported (by design):** Naked calls, naked puts
 
 ## Repository
 

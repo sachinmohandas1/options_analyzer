@@ -25,6 +25,7 @@ from strategies import (
     CoveredCallStrategy,
     PutCreditSpreadStrategy,
     CallCreditSpreadStrategy,
+    IronCondorStrategy,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ class OptionsAnalyzer:
             StrategyType.COVERED_CALL: CoveredCallStrategy,
             StrategyType.PUT_CREDIT_SPREAD: PutCreditSpreadStrategy,
             StrategyType.CALL_CREDIT_SPREAD: CallCreditSpreadStrategy,
+            StrategyType.IRON_CONDOR: IronCondorStrategy,
         }
 
         for strategy_type in self.config.enabled_strategies:

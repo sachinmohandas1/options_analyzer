@@ -146,13 +146,15 @@ In AnalyzerConfig class:
       StrategyType.CASH_SECURED_PUT,
       StrategyType.PUT_CREDIT_SPREAD,
       StrategyType.CALL_CREDIT_SPREAD,
+      StrategyType.IRON_CONDOR,
   ]
 
 AVAILABLE OPTIONS:
-  - CASH_SECURED_PUT
-  - COVERED_CALL (requires stock ownership)
-  - PUT_CREDIT_SPREAD
-  - CALL_CREDIT_SPREAD
+  - CASH_SECURED_PUT       # Sell OTM puts with cash collateral
+  - PUT_CREDIT_SPREAD      # Bull put spread (defined risk)
+  - CALL_CREDIT_SPREAD     # Bear call spread (defined risk)
+  - IRON_CONDOR            # Put spread + call spread (neutral, defined risk)
+  - COVERED_CALL           # Requires stock ownership (not enabled by default)
 
 
 ================================================================================
@@ -178,7 +180,13 @@ Most criteria can be set via CLI without editing config.py:
   --max-price 80            # Optional: Add upfront share price filter
   --top 30                  # Override top_n_trades
   -s SYM1 SYM2              # Override symbols to analyze
-  --strategies csp put_spread   # Override enabled strategies
+  --strategies csp put_spread iron_condor  # Override enabled strategies
+
+STRATEGY CLI OPTIONS:
+  csp          = Cash-Secured Put
+  put_spread   = Put Credit Spread
+  call_spread  = Call Credit Spread
+  iron_condor  = Iron Condor
 
 NOTE: --max-price is optional. By default, trades are filtered by collateral
 (max loss) vs available capital, not by share price.

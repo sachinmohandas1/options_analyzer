@@ -55,7 +55,7 @@ python main.py --json > results.json
 | `--max-delta` | 0.30 | Maximum delta for short options |
 | `--max-price` | None | Optional: Filter symbols by share price |
 | `--top` | 20 | Number of top trades to show |
-| `--strategies` | csp put_spread call_spread | Strategies to use |
+| `--strategies` | csp put_spread call_spread iron_condor | Strategies to use |
 | `--no-vol` | false | Skip volatility analysis |
 | `-i, --interactive` | false | Interactive browse mode |
 | `-v, --verbose` | false | Verbose output |
@@ -96,10 +96,12 @@ Sell OTM call, buy further OTM call. Bearish strategy with defined risk.
 - Collateral: Max loss
 
 ### Iron Condor
-Combine put spread + call spread. Neutral strategy.
-- Max profit: Total credit from both spreads
-- Max loss: Wider spread width - Total credit
-- Collateral: Max loss
+Combine put spread + call spread. Neutral strategy that profits from low volatility.
+- Sell OTM put + buy further OTM put (bull put spread)
+- Sell OTM call + buy further OTM call (bear call spread)
+- Max profit: Total credit from both spreads (when price stays between short strikes)
+- Max loss: Wider spread width - Total credit (only one side can be breached)
+- Collateral: Max loss (defined risk)
 
 ## Volatility Surface Analysis
 
