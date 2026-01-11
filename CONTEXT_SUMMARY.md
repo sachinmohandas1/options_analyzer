@@ -7,7 +7,7 @@ An options analysis tool for premium selling strategies designed for a trader wi
 - **1% weekly profit target**
 - **5 DTE maximum**
 - **70% probability of profit minimum**
-- **$120 max share price** (so CSP collateral stays under ~$12,000)
+- **Collateral-based filtering** (trades filtered by max loss vs available capital, not share price)
 
 ## Supported Strategies
 
@@ -61,7 +61,10 @@ python main.py --full-scan
 python main.py --strategies csp put_spread
 
 # Custom parameters
-python main.py --capital 15000 --min-prob 0.75 --max-dte 7 --max-price 100
+python main.py --capital 15000 --prob 0.75 --max-dte 7
+
+# Optional: Add upfront share price filtering
+python main.py --max-price 100
 ```
 
 ## Key Technical Details
@@ -141,7 +144,8 @@ CapitalConfig:
     max_total_exposure_pct: 0.80
 
 UnderlyingConfig:
-    max_share_price: 120.0
+    max_share_price: float('inf')  # No upfront price filter by default
+    # Trades filtered by collateral (max loss) vs available capital instead
 ```
 
 ## Dependencies (requirements.txt)
@@ -173,4 +177,4 @@ UnderlyingConfig:
 - Risk-averse: defined risk only, no naked options
 - Short-term focus: 5 DTE max
 - High probability: 70%+ POP minimum
-- Capital constrained: $13k, so needs affordable underlyings
+- Capital constrained: $13k, trades filtered by collateral vs capital (allows credit spreads on expensive stocks)

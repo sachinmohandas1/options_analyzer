@@ -53,12 +53,27 @@ python main.py --json > results.json
 | `--max-dte` | 5 | Maximum days to expiration |
 | `--min-dte` | 1 | Minimum days to expiration |
 | `--max-delta` | 0.30 | Maximum delta for short options |
+| `--max-price` | None | Optional: Filter symbols by share price |
 | `--top` | 20 | Number of top trades to show |
 | `--strategies` | csp put_spread call_spread | Strategies to use |
 | `--no-vol` | false | Skip volatility analysis |
 | `-i, --interactive` | false | Interactive browse mode |
 | `-v, --verbose` | false | Verbose output |
 | `--json` | false | JSON output |
+
+## Capital-Based Trade Filtering
+
+By default, trades are filtered by **collateral requirements (max loss) vs available capital**, not by share price. This allows:
+
+- **Credit spreads on expensive stocks** like GOOGL, AMZN, TSLA where the max loss fits within your capital
+- **CSPs on any stock** where strike × 100 is affordable
+
+If you want to additionally filter by share price upfront, use `--max-price`:
+
+```bash
+# Only analyze stocks under $150/share
+python main.py --max-price 150
+```
 
 ## Strategies
 

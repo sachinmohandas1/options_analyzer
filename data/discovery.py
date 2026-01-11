@@ -1,12 +1,14 @@
 """
 Symbol Discovery Module.
 
-Discovers and filters symbols based on price and liquidity criteria.
-Fetches current prices and filters out symbols exceeding max_share_price.
+Discovers symbols and fetches current prices for options analysis.
+By default, no upfront price filtering is applied - trades are filtered
+by collateral (max loss) vs available capital at the strategy level.
+Optional max_share_price filter can be enabled via --max-price CLI flag.
 
 Supports two modes:
-1. Default: Filter symbols from config list
-2. Full scan: Fetch S&P 500, Nasdaq 100, Russell 2000 constituents and scan all
+1. Default: Use symbols from config list (~100 symbols)
+2. Full scan: Fetch S&P 500, Nasdaq 100, ETFs (~600 symbols)
 """
 
 import yfinance as yf
@@ -119,8 +121,11 @@ class SymbolDiscovery:
     Discovers tradeable symbols by:
     1. Taking seed symbols from config OR fetching index constituents
     2. Fetching current prices
-    3. Filtering by max_share_price
+    3. Optionally filtering by max_share_price (if set)
     4. Checking for options availability
+
+    By default, no price filtering is applied. Trades are filtered by
+    collateral (max loss) vs available capital at the strategy level.
 
     Modes:
     - default: Use symbols from config (fast, ~100 symbols)
@@ -130,6 +135,7 @@ class SymbolDiscovery:
     def __init__(self, config: AnalyzerConfig):
         self.config = config
         self.max_price = config.underlyings.max_share_price
+        self._price_filter_enabled = self.max_price != float('inf')
         self._price_cache: Dict[str, float] = {}
         self._scan_mode = "default"
 
@@ -207,7 +213,10 @@ class SymbolDiscovery:
         max_workers: int = 10
     ) -> Tuple[List[str], Dict[str, float]]:
         """
-        Filter symbols by max share price in parallel.
+        Filter symbols and fetch prices in parallel.
+
+        If max_share_price is set (not infinite), filters by price.
+        Otherwise, only checks for options availability.
 
         Returns:
             Tuple of (valid_symbols, price_dict)
@@ -217,12 +226,16 @@ class SymbolDiscovery:
         total = len(symbols)
         processed = 0
 
-        logger.info(f"Checking prices for {total} symbols (max ${self.max_price})...")
+        if self._price_filter_enabled:
+            logger.info(f"Checking {total} symbols (max price ${self.max_price:.0f})...")
+        else:
+            logger.info(f"Checking {total} symbols for options availability...")
 
         def check_symbol(symbol: str) -> Tuple[str, Optional[float], bool]:
             price = self.get_price(symbol)
             has_opts = False
-            if price and price <= self.max_price:
+            # Only check options if price passes filter (or no filter)
+            if price and (not self._price_filter_enabled or price <= self.max_price):
                 has_opts = self.has_options(symbol)
             return symbol, price, has_opts
 
@@ -240,17 +253,22 @@ class SymbolDiscovery:
                 if price:
                     prices[symbol] = price
 
-                    if price <= self.max_price and has_opts:
+                    passes_price_filter = not self._price_filter_enabled or price <= self.max_price
+
+                    if passes_price_filter and has_opts:
                         valid_symbols.append(symbol)
                         logger.debug(f"  {symbol}: ${price:.2f} - VALID")
-                    elif price > self.max_price:
-                        logger.debug(f"  {symbol}: ${price:.2f} - TOO EXPENSIVE")
+                    elif not passes_price_filter:
+                        logger.debug(f"  {symbol}: ${price:.2f} - EXCEEDS MAX PRICE")
                     elif not has_opts:
                         logger.debug(f"  {symbol}: ${price:.2f} - NO OPTIONS")
                 else:
                     logger.debug(f"  {symbol}: NO PRICE DATA")
 
-        logger.info(f"Found {len(valid_symbols)} symbols under ${self.max_price} with options")
+        if self._price_filter_enabled:
+            logger.info(f"Found {len(valid_symbols)} symbols under ${self.max_price:.0f} with options")
+        else:
+            logger.info(f"Found {len(valid_symbols)} symbols with options available")
 
         return sorted(valid_symbols), prices
 

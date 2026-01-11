@@ -112,8 +112,8 @@ Examples:
     parser.add_argument(
         '--max-price',
         type=float,
-        default=120.0,
-        help='Maximum share price for symbols (default: $120)'
+        default=None,
+        help='Optional: Maximum share price for upfront symbol filtering. By default, no price filter is applied - trades are filtered by collateral (max loss) vs available capital instead.'
     )
 
     parser.add_argument(
@@ -406,7 +406,8 @@ def main():
     config.trade_criteria.max_dte = args.max_dte
     config.trade_criteria.min_dte = args.min_dte
     config.trade_criteria.max_delta = args.max_delta
-    config.underlyings.max_share_price = args.max_price
+    if args.max_price is not None:
+        config.underlyings.max_share_price = args.max_price
     config.top_n_trades = args.top
 
     # Map strategies
@@ -429,7 +430,10 @@ def main():
         console.print(f"[cyan]Min Prob Profit:[/cyan] {config.trade_criteria.min_prob_profit:.0%}")
         console.print(f"[cyan]Min Weekly Return:[/cyan] {config.trade_criteria.min_weekly_return_pct:.1f}%")
         console.print(f"[cyan]Max DTE:[/cyan] {config.trade_criteria.max_dte}")
-        console.print(f"[cyan]Max Share Price:[/cyan] ${config.underlyings.max_share_price:.0f}")
+        if args.max_price is not None:
+            console.print(f"[cyan]Max Share Price:[/cyan] ${config.underlyings.max_share_price:.0f}")
+        else:
+            console.print(f"[cyan]Collateral Filter:[/cyan] Trades filtered by max loss vs ${config.capital.total_capital:,.0f} capital")
         console.print(f"[cyan]Strategies:[/cyan] {', '.join(args.strategies)}")
         if args.full_scan:
             console.print(f"[cyan]Scan Mode:[/cyan] [yellow]Full market scan (S&P 500 + Nasdaq 100 + ETFs)[/yellow]")

@@ -100,10 +100,24 @@ UNDERLYING SYMBOLS (UnderlyingConfig class)
 
 Which symbols to analyze:
 
-PRICE FILTERING:
-  max_share_price = 120.0   # Filter out symbols above $120/share
-                            # $120 means CSP collateral <= $12,000
-                            # Ensures CSPs fit within your capital
+COLLATERAL-BASED FILTERING (DEFAULT):
+  By default, NO upfront share price filtering is applied.
+  Instead, trades are filtered by collateral (max loss) vs available capital
+  at the strategy level. This allows:
+
+  - Credit spreads on expensive stocks (GOOGL, AMZN, TSLA) where max loss
+    fits within your capital
+  - CSPs on any stock where strike × 100 is affordable
+
+  max_share_price = float('inf')   # No price filter by default
+
+OPTIONAL PRICE FILTERING:
+  Use --max-price CLI option to add upfront share price filtering:
+
+  python main.py --max-price 120   # Only analyze stocks under $120
+
+  This is useful if you want to focus on lower-priced stocks or reduce
+  the number of symbols to scan.
 
 SYMBOL UNIVERSE:
   The analyzer includes 100+ symbols across categories:
@@ -115,13 +129,11 @@ SYMBOL UNIVERSE:
   - High IV ETFs (ARKK, XBI, BITO, UVXY)
   - Individual stocks (tech, finance, healthcare, etc.)
 
-  At runtime, symbols exceeding max_share_price are automatically
-  filtered out. Only symbols with options available are analyzed.
+  Only symbols with options available are analyzed.
 
 TO CUSTOMIZE:
   excluded_symbols = []     # Add symbols to exclude
   custom_symbols = []       # Add your own symbols
-  max_share_price = 80.0    # Lower to be more restrictive
 
 
 ================================================================================
@@ -163,10 +175,13 @@ Most criteria can be set via CLI without editing config.py:
   --max-dte 3               # Override max_dte
   --min-dte 2               # Override min_dte
   --max-delta 0.25          # Override max_delta
-  --max-price 80            # Override max_share_price filter
+  --max-price 80            # Optional: Add upfront share price filter
   --top 30                  # Override top_n_trades
   -s SYM1 SYM2              # Override symbols to analyze
   --strategies csp put_spread   # Override enabled strategies
+
+NOTE: --max-price is optional. By default, trades are filtered by collateral
+(max loss) vs available capital, not by share price.
 
 
 ================================================================================

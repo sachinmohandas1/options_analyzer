@@ -110,20 +110,19 @@ class OptionsAnalyzer:
         # Reset position sizer for fresh run
         self.position_sizer.reset_portfolio()
 
-        # 1. Discover and filter symbols by price
+        # 1. Discover symbols (optionally filter by price if max_share_price is set)
         if symbols:
-            # User provided specific symbols - still filter by price
+            # User provided specific symbols
             filtered_symbols, prices = self.symbol_discovery.filter_symbols_by_price(symbols)
         else:
-            # Use dynamic discovery to find valid symbols
-            logger.info(f"Discovering symbols under ${self.config.underlyings.max_share_price}...")
+            # Use dynamic discovery to find symbols with options
             filtered_symbols, prices = self.symbol_discovery.discover_symbols(full_scan=full_scan)
 
         self._symbol_prices = prices
-        logger.info(f"Found {len(filtered_symbols)} symbols meeting price criteria")
+        logger.info(f"Found {len(filtered_symbols)} symbols with options available")
 
         if not filtered_symbols:
-            logger.warning("No symbols found under max price with options available")
+            logger.warning("No symbols found with options available")
             return result
 
         # 2. Fetch options chains for filtered symbols

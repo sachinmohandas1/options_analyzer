@@ -80,9 +80,12 @@ class VolatilitySurfaceConfig:
 @dataclass
 class UnderlyingConfig:
     """Configuration for which underlyings to analyze."""
-    
-    # Maximum share price - $120 means CSP collateral <= $12,000
-    max_share_price: float = 120.0
+
+    # Maximum share price for upfront symbol filtering.
+    # Default is effectively unlimited - trades are filtered by collateral
+    # (max loss) vs available capital at the strategy level instead.
+    # Use --max-price CLI option to add upfront price filtering if desired.
+    max_share_price: float = float('inf')
     
     # Use dynamic discovery to scan broad universe
     use_dynamic_discovery: bool = True
