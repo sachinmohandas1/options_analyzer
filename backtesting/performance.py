@@ -4,7 +4,7 @@ Calculates win rate, Sharpe ratio, drawdown, and other key metrics.
 """
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import pandas as pd
@@ -376,6 +376,58 @@ class PerformanceTracker:
                          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
         return pivot
+
+    def get_weekly_breakdown(
+        self,
+        trades: List[TradeRecord]
+    ) -> List[Dict[str, Any]]:
+        """
+        Get performance breakdown by week.
+
+        Returns list of weekly summaries with:
+        - week_start: Monday of the week
+        - trades: Number of trades closed that week
+        - wins: Number of winning trades
+        - losses: Number of losing trades
+        - pnl: Total P&L for the week
+        - win_rate: Win rate for the week
+        """
+        from collections import defaultdict
+
+        weeks = defaultdict(lambda: {
+            'trades': 0, 'wins': 0, 'losses': 0, 'pnl': 0.0,
+            'symbols': [], 'strategies': []
+        })
+
+        for trade in trades:
+            if not trade.exit_date:
+                continue
+
+            # Get Monday of the week this trade closed
+            exit_date = trade.exit_date
+            week_start = exit_date - timedelta(days=exit_date.weekday())
+
+            weeks[week_start]['trades'] += 1
+            pnl = trade.realized_pnl or 0
+            weeks[week_start]['pnl'] += pnl
+
+            if pnl > 0:
+                weeks[week_start]['wins'] += 1
+            elif pnl < 0:
+                weeks[week_start]['losses'] += 1
+
+            weeks[week_start]['symbols'].append(trade.symbol)
+            weeks[week_start]['strategies'].append(trade.strategy_type.value)
+
+        # Convert to sorted list with calculated win rate
+        result = []
+        for week_start in sorted(weeks.keys()):
+            data = weeks[week_start]
+            data['week_start'] = week_start
+            data['win_rate'] = data['wins'] / data['trades'] if data['trades'] > 0 else 0
+            result.append(data)
+
+        return result
 
     def reset(self) -> None:
         """Reset tracker for new backtest."""

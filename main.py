@@ -203,6 +203,58 @@ Examples:
         help='Maximum concurrent positions in backtest (default: 5)'
     )
 
+    # Diversified scaling backtest arguments
+    diversified_group = parser.add_argument_group('Diversified Scaling Backtest')
+
+    diversified_group.add_argument(
+        '--backtest-diversified',
+        action='store_true',
+        help='Run diversified scaling strategy backtest'
+    )
+
+    diversified_group.add_argument(
+        '--base-positions',
+        type=int,
+        default=5,
+        help='Base number of positions (default: 5)'
+    )
+
+    diversified_group.add_argument(
+        '--max-collateral',
+        type=float,
+        default=2000.0,
+        help='Max collateral per position in $ (default: $2000)'
+    )
+
+    diversified_group.add_argument(
+        '--scaling-threshold',
+        type=float,
+        default=2000.0,
+        help='Profit threshold to add 1 position (default: $2000)'
+    )
+
+    diversified_group.add_argument(
+        '--target-return',
+        type=float,
+        default=10.0,
+        help='Target weekly return %% for primary tier (default: 10%%)'
+    )
+
+    diversified_group.add_argument(
+        '--target-pop',
+        type=float,
+        default=0.90,
+        help='Target probability of profit (default: 0.90 = 90%%)'
+    )
+
+    diversified_group.add_argument(
+        '--relaxation-tiers',
+        nargs='+',
+        type=float,
+        default=[10.0, 8.0, 6.0, 4.0],
+        help='Return %% tiers to try in order (default: 10 8 6 4)'
+    )
+
     return parser.parse_args()
 
 
@@ -319,6 +371,65 @@ def run_backtest(args):
     return result
 
 
+def run_diversified_backtest(args):
+    """Run diversified scaling strategy backtest."""
+    from backtesting.backtester import run_diversified_scaling_backtest
+    from core.config import DEFAULT_CONFIG
+
+    # Validate dates
+    if not args.start_date or not args.end_date:
+        console.print("[red]Error: --start-date and --end-date are required for backtesting[/red]")
+        console.print("Example: python main.py --backtest-diversified --start-date 2021-01-01 --end-date 2026-01-01")
+        sys.exit(1)
+
+    try:
+        start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(args.end_date, "%Y-%m-%d").date()
+    except ValueError as e:
+        console.print(f"[red]Error parsing dates: {e}[/red]")
+        console.print("Use format: YYYY-MM-DD")
+        sys.exit(1)
+
+    if start_date >= end_date:
+        console.print("[red]Error: start-date must be before end-date[/red]")
+        sys.exit(1)
+
+    # Get symbols - use provided or default from config
+    symbols = args.symbols if args.symbols else DEFAULT_CONFIG.underlyings.default_symbols
+
+    # Run backtest
+    result = run_diversified_scaling_backtest(
+        symbols=symbols,
+        start_date=start_date,
+        end_date=end_date,
+        initial_capital=args.capital,
+        base_positions=args.base_positions,
+        max_collateral_per_position=args.max_collateral,
+        scaling_threshold=args.scaling_threshold,
+        target_weekly_return=args.target_return,
+        target_prob_profit=args.target_pop,
+        relaxation_tiers=args.relaxation_tiers,
+        profit_target=args.profit_target,
+        stop_loss=args.stop_loss,
+        verbose=not args.json,
+    )
+
+    # Output results
+    if args.json:
+        output_backtest_json(result)
+    else:
+        display_backtest_result(result)
+
+        # Show additional diversified strategy stats
+        console.print("\n[bold cyan]Position Scaling Summary:[/bold cyan]")
+        console.print(f"  Base positions: {args.base_positions}")
+        console.print(f"  Max collateral per position: ${args.max_collateral:,.0f}")
+        console.print(f"  Scaling threshold: +1 position per ${args.scaling_threshold:,.0f} profit")
+        console.print(f"  Final position target: {args.base_positions + int(max(0, result.final_capital - args.capital) / args.scaling_threshold)}")
+
+    return result
+
+
 def output_backtest_json(result):
     """Output backtest results as JSON."""
     import json
@@ -394,7 +505,12 @@ def main():
     args = parse_args()
     setup_logging(args.verbose)
 
-    # Check for backtest mode
+    # Check for diversified scaling backtest mode
+    if args.backtest_diversified:
+        run_diversified_backtest(args)
+        return
+
+    # Check for standard backtest mode
     if args.backtest:
         run_backtest(args)
         return
