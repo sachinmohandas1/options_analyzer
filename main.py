@@ -161,6 +161,28 @@ Examples:
         help='Output results as JSON'
     )
 
+    # Quantum ML arguments
+    qml_group = parser.add_argument_group('Quantum ML Scoring')
+
+    qml_group.add_argument(
+        '--qml',
+        action='store_true',
+        help='Enable quantum ML scoring (auto-trains on recent data)'
+    )
+
+    qml_group.add_argument(
+        '--qml-months',
+        type=int,
+        default=12,
+        help='Months of backtest data for QML training (default: 12)'
+    )
+
+    qml_group.add_argument(
+        '--qml-retrain',
+        action='store_true',
+        help='Force QML model retraining (ignore cache)'
+    )
+
     # Backtesting arguments
     backtest_group = parser.add_argument_group('Backtesting')
 
@@ -540,6 +562,26 @@ def main():
     # Create analyzer
     analyzer = OptionsAnalyzer(config)
 
+    # Initialize QML scorer if enabled
+    qml_scorer = None
+    if args.qml:
+        if not args.json:
+            console.print("[bold magenta]Quantum ML Scoring Enabled[/bold magenta]")
+            console.print()
+
+        from analysis.qml_integration import get_qml_scorer
+        symbols_for_qml = config.get_active_symbols()
+
+        qml_scorer = get_qml_scorer(
+            symbols=symbols_for_qml,
+            training_months=args.qml_months,
+            force_retrain=args.qml_retrain,
+            verbose=not args.json,
+        )
+
+        if qml_scorer and not args.json:
+            console.print()
+
     # Display header (unless JSON output)
     if not args.json:
         display_header()
@@ -552,6 +594,8 @@ def main():
         else:
             console.print(f"[cyan]Collateral Filter:[/cyan] Trades filtered by max loss vs ${config.capital.total_capital:,.0f} capital")
         console.print(f"[cyan]Strategies:[/cyan] {', '.join(args.strategies)}")
+        if args.qml and qml_scorer:
+            console.print(f"[cyan]QML Scoring:[/cyan] [magenta]Enabled[/magenta] (trained on {args.qml_months} months)")
         if args.full_scan:
             console.print(f"[cyan]Scan Mode:[/cyan] [yellow]Full market scan (S&P 500 + Nasdaq 100 + ETFs)[/yellow]")
         else:
@@ -571,6 +615,17 @@ def main():
             include_volatility_analysis=not args.no_vol,
             full_scan=args.full_scan
         )
+
+    # Apply QML scoring if enabled
+    if qml_scorer and qml_scorer.is_ready:
+        if not args.json:
+            with console.status("[bold magenta]Applying QML scores...") as status:
+                result.top_candidates = qml_scorer.score_and_update(result.top_candidates)
+                # Re-sort by new scores
+                result.top_candidates.sort(key=lambda c: c.overall_score, reverse=True)
+        else:
+            result.top_candidates = qml_scorer.score_and_update(result.top_candidates)
+            result.top_candidates.sort(key=lambda c: c.overall_score, reverse=True)
 
     # Output results
     if args.json:

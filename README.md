@@ -112,6 +112,54 @@ The analyzer builds IV surfaces and extracts trading signals:
 - **Skew**: 25-delta put vs call IV differential
 - **Anomalies**: Statistical outliers in IV
 
+## Quantum ML Scoring (Experimental)
+
+Enhance trade selection with a Variational Quantum Circuit (VQC) trained on your backtest data. The quantum model learns non-linear feature interactions that simple weighted scoring might miss.
+
+### Quick Start
+
+```bash
+# Enable QML scoring (auto-trains on 12 months of data)
+python main.py --qml -s SPY QQQ IWM
+
+# Custom training period
+python main.py --qml --qml-months 6 -s SPY QQQ IWM
+
+# Force retrain (ignore cached model)
+python main.py --qml --qml-retrain -s SPY QQQ
+```
+
+### How It Works
+
+1. **First run**: Automatically trains on backtest data for specified symbols (~30-60 seconds)
+2. **Subsequent runs**: Loads cached model instantly (cache expires after 7 days)
+3. **Scoring**: Blends QML score (70%) with original score (30%) for stability
+
+### QML Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--qml` | off | Enable quantum ML scoring |
+| `--qml-months` | 12 | Months of backtest data for training |
+| `--qml-retrain` | off | Force model retraining (ignore cache) |
+
+### Output
+
+When QML is enabled, the trade table shows a **QML Δ** column indicating how the quantum model adjusted each trade's score:
+- **Green (+)**: QML boosted the trade (model predicts higher success)
+- **Red (-)**: QML penalized the trade (model predicts lower success)
+- **Gray**: Minimal change
+
+### Installation
+
+```bash
+pip install pennylane pennylane-lightning torch
+```
+
+Falls back to classical logistic regression if dependencies unavailable.
+
+For detailed documentation, see [docs/QUANTUM_SCORER.txt](docs/QUANTUM_SCORER.txt).
+
 ## Backtesting
 
 Test your strategies against historical data (up to 10 years). The backtester uses real price data from Yahoo Finance and synthesizes options chains using Black-Scholes modeling.
@@ -171,7 +219,9 @@ options_analyzer/
 ├── analysis/
 │   ├── greeks.py      # Greeks calculations
 │   ├── volatility_surface.py  # Vol surface analysis
-│   └── position_sizer.py      # Position sizing
+│   ├── position_sizer.py      # Position sizing
+│   ├── quantum_scorer.py      # VQC-based trade scoring
+│   └── qml_integration.py     # Streamlined QML CLI integration
 ├── strategies/
 │   ├── base.py        # Base strategy class
 │   ├── secured_premium.py  # CSP, covered calls
@@ -184,7 +234,8 @@ options_analyzer/
 ├── ui/
 │   └── display.py     # Terminal display
 ├── analyzer.py        # Main orchestrator
-└── main.py           # CLI entry point
+├── main.py           # CLI entry point
+└── train_quantum_scorer.py  # Standalone QML training script
 ```
 
 ## Customization

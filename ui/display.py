@@ -73,12 +73,17 @@ def display_portfolio_summary(summary: Dict[str, Any]):
 def display_candidates_table(
     candidates: List[TradeCandidate],
     title: str = "Trade Candidates",
-    show_all_columns: bool = False
+    show_all_columns: bool = False,
+    show_qml: bool = False
 ):
     """Display trade candidates in a formatted table."""
     if not candidates:
         console.print(f"[yellow]No {title.lower()} found matching criteria.[/yellow]")
         return
+
+    # Auto-detect QML mode if any candidate has QML attributes
+    if not show_qml and candidates:
+        show_qml = hasattr(candidates[0], '_qml_delta')
 
     table = Table(title=title, box=box.ROUNDED, show_lines=True)
 
@@ -93,6 +98,10 @@ def display_candidates_table(
     table.add_column("Weekly Ret", justify="right", width=10)
     table.add_column("Prob Profit", justify="right", width=10)
     table.add_column("Score", justify="right", width=6)
+
+    # QML column - show when QML scoring was applied
+    if show_qml:
+        table.add_column("QML Δ", justify="right", width=7)
 
     if show_all_columns:
         table.add_column("Delta", justify="right", width=7)
@@ -134,6 +143,21 @@ def display_candidates_table(
             score_str,
         ]
 
+        # QML delta column
+        if show_qml:
+            qml_delta = getattr(c, '_qml_delta', None)
+            if qml_delta is not None:
+                # Color based on positive/negative impact
+                if qml_delta > 2:
+                    delta_str = f"[green]+{qml_delta:.1f}[/green]"
+                elif qml_delta < -2:
+                    delta_str = f"[red]{qml_delta:.1f}[/red]"
+                else:
+                    delta_str = f"[dim]{qml_delta:+.1f}[/dim]"
+            else:
+                delta_str = "[dim]--[/dim]"
+            row.append(delta_str)
+
         if show_all_columns:
             row.extend([
                 f"{c.net_delta:.3f}",
@@ -144,6 +168,11 @@ def display_candidates_table(
         table.add_row(*row)
 
     console.print(table)
+
+    # Show QML legend if active
+    if show_qml:
+        console.print("[dim]QML Δ: Score change from quantum model ([green]+[/green] = QML boost, [red]-[/red] = QML penalty)[/dim]")
+
     console.print()
 
 
