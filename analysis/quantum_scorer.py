@@ -54,7 +54,7 @@ class QuantumScorerConfig:
     """Configuration for the quantum trade scorer."""
 
     # Circuit architecture
-    n_qubits: int = 6  # One per input feature
+    n_qubits: int = 7  # One per input feature (including sentiment)
     n_layers: int = 3  # Variational layer depth
 
     # Device selection
@@ -82,13 +82,14 @@ class FeatureExtractor:
     """
     Extracts and normalizes features from TradeCandidate objects.
 
-    Features encoded (6 total):
+    Features encoded (7 total):
     1. prob_profit - Probability of profit (already 0-1)
     2. weekly_return - Weekly return % (tanh-scaled)
     3. net_delta - Position delta (abs, tanh-scaled)
     4. theta_ratio - Theta relative to premium
     5. iv_rank - IV percentile rank (0-1 normalized)
     6. dte_norm - Days to expiration (normalized)
+    7. sentiment_score - News sentiment (-1 to +1, scaled to 0-1)
     """
 
     FEATURE_NAMES = [
@@ -97,15 +98,36 @@ class FeatureExtractor:
         'net_delta',
         'theta_ratio',
         'iv_rank',
-        'dte_norm'
+        'dte_norm',
+        'sentiment_score',
     ]
 
     def __init__(self, max_dte: int = 7, feature_scale: float = np.pi):
         self.max_dte = max_dte
         self.feature_scale = feature_scale
+        # Sentiment lookup dict: symbol -> sentiment_score (-1 to +1)
+        self._sentiment_cache: Dict[str, float] = {}
+
+    def set_sentiment(self, sentiment_signals: Dict[str, Any]) -> None:
+        """
+        Set sentiment signals for feature extraction.
+
+        Args:
+            sentiment_signals: Dict mapping symbol to SentimentSignal objects
+        """
+        self._sentiment_cache = {}
+        for symbol, signal in sentiment_signals.items():
+            # Handle both SentimentSignal objects and raw dicts
+            if hasattr(signal, 'sentiment_score'):
+                self._sentiment_cache[symbol.upper()] = signal.sentiment_score
+            elif isinstance(signal, dict):
+                self._sentiment_cache[symbol.upper()] = signal.get('sentiment_score', 0.0)
 
     def extract(self, candidate: TradeCandidate) -> np.ndarray:
         """Extract normalized feature vector from a TradeCandidate."""
+        # Get sentiment score for this symbol (default to neutral if not available)
+        sentiment = self._sentiment_cache.get(candidate.underlying_symbol.upper(), 0.0)
+
         features = np.array([
             # 1. Probability of profit (already 0-1)
             candidate.prob_profit,
@@ -124,6 +146,9 @@ class FeatureExtractor:
 
             # 6. DTE normalized by max
             min(candidate.dte / self.max_dte, 1.0),
+
+            # 7. Sentiment score: map -1 to +1 -> 0 to 1
+            (sentiment + 1) / 2,
         ], dtype=np.float64)
 
         # Scale for rotation gates
@@ -145,6 +170,10 @@ class ClassicalFallbackScorer:
         self.feature_extractor = FeatureExtractor(feature_scale=1.0)  # No scaling needed
         self.weights = None
         self.bias = 0.0
+
+    def set_sentiment(self, sentiment_signals: Dict[str, Any]) -> None:
+        """Set sentiment signals for feature extraction."""
+        self.feature_extractor.set_sentiment(sentiment_signals)
 
     def train(self,
               candidates: List[TradeCandidate],
@@ -239,6 +268,10 @@ if PENNYLANE_AVAILABLE and TORCH_AVAILABLE:
             self.params = None
             self.training_history: List[Dict] = []
             self.is_trained = False
+
+        def set_sentiment(self, sentiment_signals: Dict[str, Any]) -> None:
+            """Set sentiment signals for feature extraction."""
+            self.feature_extractor.set_sentiment(sentiment_signals)
 
         def _build_circuit(self):
             """Construct the variational quantum circuit."""

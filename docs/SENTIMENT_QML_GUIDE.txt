@@ -1,0 +1,180 @@
+================================================================================
+                    SENTIMENT ANALYSIS + QML INTEGRATION GUIDE
+================================================================================
+
+OVERVIEW
+--------
+The options analyzer now integrates news sentiment analysis with the quantum
+machine learning (QML) scorer. This allows the system to factor in market
+sentiment when scoring trade candidates, potentially improving trade selection
+by detecting event risk and market fear/greed signals.
+
+
+HOW IT WORKS
+------------
+
+1. NEWS FETCHING
+   - Uses yfinance to fetch recent news articles for each symbol
+   - Articles are cached locally in .news_cache/ with 1-hour TTL
+   - Default lookback window is 48 hours of news
+
+2. SENTIMENT ANALYSIS
+   - Uses FinBERT (ProsusAI/finbert), a BERT model fine-tuned on financial text
+   - 89% accuracy on financial sentiment classification
+   - Falls back to keyword-based analysis if FinBERT unavailable
+   - Outputs sentiment score from -1 (bearish) to +1 (bullish)
+
+3. RISK FILTERING
+   The sentiment system acts as a RISK FILTER, not a directional predictor:
+
+   | Risk Level | Meaning                              | Recommended Action      |
+   |------------|--------------------------------------|-------------------------|
+   | Low        | Stable sentiment, normal news volume | Good for premium selling|
+   | Elevated   | Low confidence or shifting sentiment | Caution advised         |
+   | High       | News volume spike (z-score > 2)      | Avoid or hedge          |
+
+4. QML INTEGRATION (7-QUBIT CIRCUIT)
+   The quantum scorer now uses 7 features instead of 6:
+
+   1. prob_profit    - Probability of profit (0-1)
+   2. weekly_return  - Weekly return % (tanh-scaled)
+   3. net_delta      - Position delta (abs, tanh-scaled)
+   4. theta_ratio    - Theta relative to premium
+   5. iv_rank        - IV percentile rank (0-1)
+   6. dte_norm       - Days to expiration (normalized)
+   7. sentiment_score - NEWS sentiment (-1 to +1, scaled to 0-1) <-- NEW
+
+   The quantum circuit learns non-linear interactions between these features,
+   potentially discovering patterns like "high IV + negative sentiment =
+   opportunity" or "positive sentiment + news spike = avoid".
+
+
+USAGE
+-----
+
+Basic sentiment analysis:
+    python main.py --sentiment -s SPY QQQ IWM
+
+Custom lookback window (24 hours):
+    python main.py --sentiment --sentiment-lookback 24 -s SPY
+
+Combined with QML scoring (RECOMMENDED):
+    python main.py --sentiment --qml -s SPY QQQ IWM
+
+Full analysis with all features:
+    python main.py --sentiment --qml --qml-months 12 -s SPY QQQ IWM AAPL MSFT
+
+
+OUTPUT
+------
+
+The sentiment table shows:
+
+| Column     | Description                                          |
+|------------|------------------------------------------------------|
+| Symbol     | Ticker symbol                                        |
+| Sentiment  | Score from -1 to +1 (green=bullish, red=bearish)     |
+| Confidence | How confident the analysis is (based on article count|
+|            | and sentiment agreement)                             |
+| Risk       | Low/Elevated/High risk classification                |
+| News Vol   | Number of articles in the lookback window            |
+| Dominant   | Most common sentiment in articles                    |
+| Top News   | Clickable link to the top news article               |
+
+The "Open Article" links are clickable in terminals that support hyperlinks
+(Windows Terminal, iTerm2, etc.).
+
+
+WHEN TO USE SENTIMENT + QML
+---------------------------
+
+RECOMMENDED scenarios:
+- Live trading analysis (real-time sentiment matters)
+- Volatile market conditions (sentiment helps detect event risk)
+- Earnings season (news volume spikes are meaningful)
+- When trading individual stocks (vs. index ETFs)
+
+LESS USEFUL scenarios:
+- Backtesting (historical sentiment hard to reconstruct)
+- Very stable market conditions (sentiment adds little signal)
+- Pure index trading (SPY/QQQ sentiment less actionable)
+
+
+INTERPRETING THE RESULTS
+------------------------
+
+1. HIGH SENTIMENT + HIGH IV
+   - Could be opportunity (fear without catalyst)
+   - Or could be pre-event positioning
+   - Check news volume: low volume = opportunity, high volume = caution
+
+2. NEGATIVE SENTIMENT + LOW NEWS VOLUME
+   - General pessimism without specific catalyst
+   - Often good for premium selling (elevated IV, no binary event)
+
+3. POSITIVE SENTIMENT + NEWS SPIKE
+   - Market euphoria, often after good news
+   - May indicate top, caution for call credit spreads
+
+4. ELEVATED RISK FLAG
+   - Low confidence in sentiment (few articles or disagreement)
+   - Consider waiting for clearer signal
+
+
+TECHNICAL NOTES
+---------------
+
+Model Architecture:
+- 7-qubit variational quantum circuit (was 6)
+- 3 strongly entangling layers
+- Trained on 12 months of backtest data by default
+
+Caching:
+- News cache: .news_cache/ (1-hour TTL)
+- QML model cache: .quantum_models/ (7-day expiry)
+- FinBERT model: ~/.cache/huggingface/hub/models--ProsusAI--finbert/
+
+If you have existing QML models trained with 6 qubits, they will need to be
+retrained (delete .quantum_models/ or use --qml-retrain).
+
+Dependencies:
+- transformers (for FinBERT)
+- torch (for model inference)
+- pennylane (for quantum circuit)
+
+Install with: pip install transformers torch pennylane pennylane-lightning
+
+
+FILES MODIFIED
+--------------
+
+analysis/quantum_scorer.py
+  - Added sentiment_score to FeatureExtractor (7th feature)
+  - Updated n_qubits default to 7
+  - Added set_sentiment() method to all scorer classes
+
+analysis/qml_integration.py
+  - Updated n_qubits default to 7
+  - Added set_sentiment() method to QMLScorer
+  - Updated score_and_update() to accept sentiment signals
+
+analysis/sentiment.py
+  - Core sentiment analysis with FinBERT
+  - Time-weighted aggregation of article sentiments
+
+data/news_fetcher.py
+  - News fetching from yfinance with caching
+
+core/models.py
+  - SentimentSignal dataclass with risk_flag property
+
+ui/display.py
+  - display_sentiment_summary() with clickable article links
+
+main.py
+  - Pass sentiment signals to QML scorer when both flags enabled
+
+
+================================================================================
+                              END OF GUIDE
+================================================================================

@@ -5,7 +5,7 @@ Using Pydantic for validation and dataclasses for internal structures.
 
 from dataclasses import dataclass, field
 from datetime import datetime, date
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from enum import Enum
 import numpy as np
 
@@ -271,8 +271,8 @@ class SentimentSignal:
     dominant_sentiment: str  # "bullish", "bearish", "neutral"
     last_updated: datetime = field(default_factory=datetime.now)
 
-    # Source articles (for transparency)
-    top_headlines: List[str] = field(default_factory=list)
+    # Source articles (for transparency) - list of (title, url) tuples
+    top_headlines: List[Tuple[str, str]] = field(default_factory=list)
 
     @property
     def risk_flag(self) -> str:

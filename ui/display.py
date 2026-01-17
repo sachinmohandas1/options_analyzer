@@ -552,7 +552,7 @@ def display_sentiment_summary(signals: Dict[str, SentimentSignal]):
     table.add_column("Risk", justify="center", no_wrap=True)
     table.add_column("News Vol", justify="right", no_wrap=True)
     table.add_column("Dominant", no_wrap=True)
-    table.add_column("Top Headline", no_wrap=False)
+    table.add_column("Top News URL", no_wrap=False)
 
     for symbol, signal in sorted(signals.items()):
         # Format sentiment with color
@@ -581,6 +581,9 @@ def display_sentiment_summary(signals: Dict[str, SentimentSignal]):
 
         # Format dominant sentiment
         dom = signal.dominant_sentiment
+        if isinstance(dom, dict):
+            dom = dom.get('label', 'neutral')  # Handle dict format
+        dom = str(dom) if dom else "neutral"
         if dom == "positive":
             dom_color = "green"
         elif dom == "negative":
@@ -588,8 +591,28 @@ def display_sentiment_summary(signals: Dict[str, SentimentSignal]):
         else:
             dom_color = "dim"
 
-        # Get top headline (truncated to fit)
-        headline = signal.top_headlines[0][:40] + "..." if signal.top_headlines else "[dim]No news[/dim]"
+        # Get top headline URL (top_headlines is now List[Tuple[title, url]])
+        headline = "[dim]No news[/dim]"
+        if signal.top_headlines:
+            item = signal.top_headlines[0]
+            url = None
+            # Handle various formats: tuple (new), str (old), dict (raw yfinance)
+            if isinstance(item, tuple) and len(item) >= 2:
+                url = item[1]
+            elif isinstance(item, str):
+                url = item
+            elif isinstance(item, dict):
+                url = item.get('url') or item.get('link') or item.get('canonicalUrl', '')
+
+            # url might itself be a dict with nested 'url' key (yfinance format)
+            if isinstance(url, dict):
+                url = url.get('url', '')
+
+            # Create clickable hyperlink with short display text
+            if url:
+                headline = f"[link={url}]Open Article[/link]"
+            else:
+                headline = "[dim]No URL[/dim]"
 
         table.add_row(
             symbol,

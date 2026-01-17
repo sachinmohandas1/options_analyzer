@@ -664,13 +664,19 @@ def main():
 
     # Apply QML scoring if enabled
     if qml_scorer and qml_scorer.is_ready:
+        # Pass sentiment signals to QML scorer if available
+        qml_sentiment = sentiment_signals if args.sentiment else None
         if not args.json:
             with console.status("[bold magenta]Applying QML scores...") as status:
-                result.top_candidates = qml_scorer.score_and_update(result.top_candidates)
+                result.top_candidates = qml_scorer.score_and_update(
+                    result.top_candidates, sentiment_signals=qml_sentiment
+                )
                 # Re-sort by new scores
                 result.top_candidates.sort(key=lambda c: c.overall_score, reverse=True)
         else:
-            result.top_candidates = qml_scorer.score_and_update(result.top_candidates)
+            result.top_candidates = qml_scorer.score_and_update(
+                result.top_candidates, sentiment_signals=qml_sentiment
+            )
             result.top_candidates.sort(key=lambda c: c.overall_score, reverse=True)
 
     # Output results

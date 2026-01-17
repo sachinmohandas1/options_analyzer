@@ -402,8 +402,8 @@ class SentimentAnalyzer:
         else:
             momentum = 0.0
 
-        # Get top headlines for transparency
-        top_headlines = [a['article'].title for a in article_sentiments[:5]]
+        # Get top headlines with URLs for transparency
+        top_headlines = [(a['article'].title, a['article'].url) for a in article_sentiments[:5]]
 
         return SentimentSignal(
             symbol=symbol,

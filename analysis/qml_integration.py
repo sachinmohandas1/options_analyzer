@@ -51,7 +51,7 @@ class QMLConfig:
     cache_dir: Path = Path(".quantum_models")
 
     # Model parameters
-    n_qubits: int = 6
+    n_qubits: int = 7  # 7 qubits: 6 trade features + 1 sentiment
     n_layers: int = 3
     epochs: int = 80
     learning_rate: float = 0.01
@@ -74,6 +74,18 @@ class QMLScorer:
         self.scorer = None
         self.is_ready = False
         self.training_info: Dict[str, Any] = {}
+        self._sentiment_signals: Dict[str, Any] = {}
+
+    def set_sentiment(self, sentiment_signals: Dict[str, Any]) -> None:
+        """
+        Set sentiment signals for scoring.
+
+        Args:
+            sentiment_signals: Dict mapping symbol to SentimentSignal objects
+        """
+        self._sentiment_signals = sentiment_signals or {}
+        if self.scorer is not None:
+            self.scorer.set_sentiment(self._sentiment_signals)
 
     def initialize(
         self,
@@ -293,12 +305,19 @@ class QMLScorer:
             return candidate.overall_score / 100 if candidate.overall_score else 0.5
 
         try:
+            # Ensure sentiment is set before scoring
+            if self._sentiment_signals:
+                self.scorer.set_sentiment(self._sentiment_signals)
             return self.scorer.score(candidate)
         except Exception as e:
             logger.warning(f"Scoring error: {e}")
             return candidate.overall_score / 100 if candidate.overall_score else 0.5
 
-    def score_and_update(self, candidates: List[TradeCandidate]) -> List[TradeCandidate]:
+    def score_and_update(
+        self,
+        candidates: List[TradeCandidate],
+        sentiment_signals: Dict[str, Any] = None
+    ) -> List[TradeCandidate]:
         """
         Score candidates and update their overall_score in place.
 
@@ -306,12 +325,17 @@ class QMLScorer:
 
         Args:
             candidates: List of TradeCandidate objects to score
+            sentiment_signals: Optional sentiment signals to use for scoring
 
         Returns:
             The same list with updated overall_score values
         """
         if not self.is_ready:
             return candidates
+
+        # Update sentiment if provided
+        if sentiment_signals is not None:
+            self.set_sentiment(sentiment_signals)
 
         for candidate in candidates:
             qml_score = self.score(candidate)
@@ -395,6 +419,7 @@ def score_candidates_with_qml(
     symbols: List[str],
     training_months: int = 12,
     verbose: bool = False,
+    sentiment_signals: Dict[str, Any] = None,
 ) -> List[TradeCandidate]:
     """
     Convenience function to score candidates with QML.
@@ -406,6 +431,7 @@ def score_candidates_with_qml(
         symbols: Symbols for training (if needed)
         training_months: Training data period
         verbose: Print progress
+        sentiment_signals: Optional sentiment signals for scoring
 
     Returns:
         Candidates with updated overall_score
@@ -414,12 +440,12 @@ def score_candidates_with_qml(
 
     # Try to use existing scorer
     if _global_scorer and _global_scorer.is_ready:
-        return _global_scorer.score_and_update(candidates)
+        return _global_scorer.score_and_update(candidates, sentiment_signals)
 
     # Initialize new scorer
     scorer = get_qml_scorer(symbols, training_months, verbose=verbose)
 
     if scorer:
-        return scorer.score_and_update(candidates)
+        return scorer.score_and_update(candidates, sentiment_signals)
 
     return candidates
