@@ -248,6 +248,68 @@ class VolatilitySurface:
 
 
 @dataclass
+class SentimentSignal:
+    """
+    Sentiment analysis result for a symbol or sector.
+
+    Used as a risk filter rather than directional predictor.
+    High IV + negative sentiment + low news volume = opportunity (fear without catalyst)
+    High IV + news volume spike = avoid (binary event risk)
+    """
+    symbol: str
+    sentiment_score: float  # -1 (bearish) to +1 (bullish)
+    confidence: float  # 0-1, based on article count and agreement
+
+    # Risk filter signals
+    news_volume: int  # Number of articles in window
+    news_volume_zscore: float  # Unusual activity detector (>2 = event risk)
+    sentiment_momentum: float  # Current - 24h ago (trend shift)
+
+    # Metadata
+    article_count: int
+    avg_relevance: float  # How relevant articles are to the ticker
+    dominant_sentiment: str  # "bullish", "bearish", "neutral"
+    last_updated: datetime = field(default_factory=datetime.now)
+
+    # Source articles (for transparency)
+    top_headlines: List[str] = field(default_factory=list)
+
+    @property
+    def risk_flag(self) -> str:
+        """
+        Interpret sentiment as risk signal for options selling.
+
+        Returns:
+            "low_risk": Good conditions for premium selling
+            "elevated": Caution advised
+            "high_risk": Potential binary event, avoid or hedge
+        """
+        # High news volume = potential event
+        if self.news_volume_zscore > 2.0:
+            return "high_risk"
+
+        # Rapid sentiment shift = uncertainty
+        if abs(self.sentiment_momentum) > 0.3:
+            return "elevated"
+
+        # Low confidence = not enough data
+        if self.confidence < 0.3:
+            return "elevated"
+
+        return "low_risk"
+
+    @property
+    def display_score(self) -> str:
+        """Human-readable sentiment score."""
+        if self.sentiment_score > 0.2:
+            return f"+{self.sentiment_score:.2f} (Bullish)"
+        elif self.sentiment_score < -0.2:
+            return f"{self.sentiment_score:.2f} (Bearish)"
+        else:
+            return f"{self.sentiment_score:.2f} (Neutral)"
+
+
+@dataclass
 class AnalysisResult:
     """Container for complete analysis results."""
     generated_at: datetime

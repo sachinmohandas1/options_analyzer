@@ -12,7 +12,7 @@ from rich.text import Text
 from rich.style import Style
 from rich import box
 
-from core.models import TradeCandidate, AnalysisResult, VolatilitySurface
+from core.models import TradeCandidate, AnalysisResult, VolatilitySurface, SentimentSignal
 from analysis.position_sizer import PositionAllocation
 from typing import TYPE_CHECKING
 
@@ -56,8 +56,8 @@ def display_portfolio_summary(summary: Dict[str, Any]):
     """Display portfolio/capital summary."""
     table = Table(title="Portfolio Summary", box=box.ROUNDED)
 
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", justify="right")
+    table.add_column("Metric", style="cyan", no_wrap=True)
+    table.add_column("Value", justify="right", no_wrap=True)
 
     table.add_row("Total Capital", format_currency(summary['total_capital']))
     table.add_row("Deployed Capital", format_currency(summary['deployed_capital']))
@@ -87,26 +87,26 @@ def display_candidates_table(
 
     table = Table(title=title, box=box.ROUNDED, show_lines=True)
 
-    # Core columns
-    table.add_column("#", style="dim", width=3)
-    table.add_column("Strategy", style="cyan", width=18)
-    table.add_column("Symbol", style="bold", width=6)
-    table.add_column("DTE", justify="right", width=4)
-    table.add_column("Strike(s)", width=12)
-    table.add_column("Premium", justify="right", width=10)
-    table.add_column("Collateral", justify="right", width=10)
-    table.add_column("Weekly Ret", justify="right", width=10)
-    table.add_column("Prob Profit", justify="right", width=10)
-    table.add_column("Score", justify="right", width=6)
+    # Core columns - no fixed width, let Rich auto-size based on content
+    table.add_column("#", style="dim")
+    table.add_column("Strategy", style="cyan")
+    table.add_column("Symbol", style="bold")
+    table.add_column("DTE", justify="right")
+    table.add_column("Strike(s)")
+    table.add_column("Premium", justify="right")
+    table.add_column("Collateral", justify="right")
+    table.add_column("Weekly Ret", justify="right")
+    table.add_column("Prob Profit", justify="right")
+    table.add_column("Score", justify="right")
 
     # QML column - show when QML scoring was applied
     if show_qml:
-        table.add_column("QML Δ", justify="right", width=7)
+        table.add_column("QML Δ", justify="right")
 
     if show_all_columns:
-        table.add_column("Delta", justify="right", width=7)
-        table.add_column("Theta", justify="right", width=7)
-        table.add_column("IV Rank", justify="right", width=8)
+        table.add_column("Delta", justify="right")
+        table.add_column("Theta", justify="right")
+        table.add_column("IV Rank", justify="right")
 
     for i, c in enumerate(candidates, 1):
         # Format strikes
@@ -400,8 +400,8 @@ def display_backtest_result(result: "BacktestResult"):
 
     # Key metrics table
     metrics_table = Table(title="Performance Metrics", box=box.ROUNDED)
-    metrics_table.add_column("Metric", style="cyan", width=25)
-    metrics_table.add_column("Value", justify="right", width=15)
+    metrics_table.add_column("Metric", style="cyan", no_wrap=True)
+    metrics_table.add_column("Value", justify="right", no_wrap=True)
 
     metrics_table.add_row("Total Trades", str(metrics.total_trades))
     metrics_table.add_row("Winning Trades", f"[green]{metrics.winning_trades}[/green]")
@@ -436,9 +436,9 @@ def display_backtest_result(result: "BacktestResult"):
     # Exit reason breakdown
     if metrics.exits_by_reason:
         exit_table = Table(title="Exit Reasons", box=box.ROUNDED)
-        exit_table.add_column("Reason", style="cyan", width=20)
-        exit_table.add_column("Count", justify="right", width=10)
-        exit_table.add_column("P&L", justify="right", width=15)
+        exit_table.add_column("Reason", style="cyan", no_wrap=True)
+        exit_table.add_column("Count", justify="right", no_wrap=True)
+        exit_table.add_column("P&L", justify="right", no_wrap=True)
 
         for reason, count in metrics.exits_by_reason.items():
             pnl = metrics.pnl_by_exit_reason.get(reason, 0)
@@ -455,11 +455,11 @@ def display_backtest_result(result: "BacktestResult"):
     # Strategy breakdown
     if result.metrics_by_strategy:
         strategy_table = Table(title="Performance by Strategy", box=box.ROUNDED)
-        strategy_table.add_column("Strategy", style="cyan", width=20)
-        strategy_table.add_column("Trades", justify="right", width=8)
-        strategy_table.add_column("Win Rate", justify="right", width=10)
-        strategy_table.add_column("P&L", justify="right", width=12)
-        strategy_table.add_column("Avg Trade", justify="right", width=10)
+        strategy_table.add_column("Strategy", style="cyan", no_wrap=True)
+        strategy_table.add_column("Trades", justify="right", no_wrap=True)
+        strategy_table.add_column("Win Rate", justify="right", no_wrap=True)
+        strategy_table.add_column("P&L", justify="right", no_wrap=True)
+        strategy_table.add_column("Avg Trade", justify="right", no_wrap=True)
 
         for strategy, strat_metrics in result.metrics_by_strategy.items():
             pnl_color = "green" if strat_metrics.total_pnl > 0 else "red"
@@ -477,10 +477,10 @@ def display_backtest_result(result: "BacktestResult"):
     # Symbol breakdown (top 5)
     if result.metrics_by_symbol:
         symbol_table = Table(title="Performance by Symbol (Top 10)", box=box.ROUNDED)
-        symbol_table.add_column("Symbol", style="cyan", width=10)
-        symbol_table.add_column("Trades", justify="right", width=8)
-        symbol_table.add_column("Win Rate", justify="right", width=10)
-        symbol_table.add_column("P&L", justify="right", width=12)
+        symbol_table.add_column("Symbol", style="cyan", no_wrap=True)
+        symbol_table.add_column("Trades", justify="right", no_wrap=True)
+        symbol_table.add_column("Win Rate", justify="right", no_wrap=True)
+        symbol_table.add_column("P&L", justify="right", no_wrap=True)
 
         # Sort by P&L
         sorted_symbols = sorted(
@@ -504,12 +504,12 @@ def display_backtest_result(result: "BacktestResult"):
     # Recent trades
     if result.trades:
         trades_table = Table(title="Recent Trades (Last 10)", box=box.ROUNDED)
-        trades_table.add_column("Date", width=12)
-        trades_table.add_column("Symbol", width=8)
-        trades_table.add_column("Strategy", width=18)
-        trades_table.add_column("Exit", width=14)
-        trades_table.add_column("Days", justify="right", width=5)
-        trades_table.add_column("P&L", justify="right", width=12)
+        trades_table.add_column("Date", no_wrap=True)
+        trades_table.add_column("Symbol", no_wrap=True)
+        trades_table.add_column("Strategy", no_wrap=True)
+        trades_table.add_column("Exit", no_wrap=True)
+        trades_table.add_column("Days", justify="right", no_wrap=True)
+        trades_table.add_column("P&L", justify="right", no_wrap=True)
 
         for trade in result.trades[-10:]:
             pnl = trade.realized_pnl or 0
@@ -519,7 +519,7 @@ def display_backtest_result(result: "BacktestResult"):
             trades_table.add_row(
                 trade.entry_date.strftime("%Y-%m-%d") if trade.entry_date else "N/A",
                 trade.symbol,
-                trade.strategy_name[:18],
+                trade.strategy_name,
                 exit_reason,
                 str(trade.days_held),
                 f"[{pnl_color}]{format_currency(pnl)}[/{pnl_color}]"
@@ -535,3 +535,78 @@ def display_backtest_result(result: "BacktestResult"):
             console.print(f"  [dim]{err.get('date', 'N/A')}: {err.get('symbol', 'N/A')} - {err.get('error', 'Unknown')}[/dim]")
 
     console.print(f"\n[dim]Backtest completed in {result.duration_seconds:.1f} seconds[/dim]")
+
+
+def display_sentiment_summary(signals: Dict[str, SentimentSignal]):
+    """Display sentiment analysis summary as a risk filter table."""
+    if not signals:
+        return
+
+    console.print()
+    console.print(Panel("Sentiment Risk Filter", style="bold blue"))
+
+    table = Table(box=box.ROUNDED)
+    table.add_column("Symbol", style="bold", no_wrap=True)
+    table.add_column("Sentiment", justify="center", no_wrap=True)
+    table.add_column("Confidence", justify="right", no_wrap=True)
+    table.add_column("Risk", justify="center", no_wrap=True)
+    table.add_column("News Vol", justify="right", no_wrap=True)
+    table.add_column("Dominant", no_wrap=True)
+    table.add_column("Top Headline", no_wrap=False)
+
+    for symbol, signal in sorted(signals.items()):
+        # Format sentiment with color
+        score = signal.sentiment_score
+        if score > 0.2:
+            sent_color = "green"
+            sent_str = f"+{score:.2f}"
+        elif score < -0.2:
+            sent_color = "red"
+            sent_str = f"{score:.2f}"
+        else:
+            sent_color = "yellow"
+            sent_str = f"{score:.2f}"
+
+        # Format risk with color
+        risk = signal.risk_flag
+        if risk == "low_risk":
+            risk_color = "green"
+            risk_str = "Low"
+        elif risk == "elevated":
+            risk_color = "yellow"
+            risk_str = "Elevated"
+        else:
+            risk_color = "red"
+            risk_str = "High"
+
+        # Format dominant sentiment
+        dom = signal.dominant_sentiment
+        if dom == "positive":
+            dom_color = "green"
+        elif dom == "negative":
+            dom_color = "red"
+        else:
+            dom_color = "dim"
+
+        # Get top headline (truncated to fit)
+        headline = signal.top_headlines[0][:40] + "..." if signal.top_headlines else "[dim]No news[/dim]"
+
+        table.add_row(
+            symbol,
+            f"[{sent_color}]{sent_str}[/{sent_color}]",
+            f"{signal.confidence:.0%}",
+            f"[{risk_color}]{risk_str}[/{risk_color}]",
+            str(signal.news_volume),
+            f"[{dom_color}]{dom.title()}[/{dom_color}]",
+            headline,
+        )
+
+    console.print(table)
+
+    # Legend
+    console.print()
+    console.print("[dim]Risk Legend:[/dim]")
+    console.print("  [green]Low[/green] - Good conditions for premium selling (stable sentiment, normal news volume)")
+    console.print("  [yellow]Elevated[/yellow] - Caution advised (low confidence or shifting sentiment)")
+    console.print("  [red]High[/red] - Potential event risk, consider avoiding or hedging")
+    console.print()

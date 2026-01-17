@@ -26,6 +26,7 @@ from ui.display import (
     display_menu,
     display_backtest_result,
     display_backtest_header,
+    display_sentiment_summary,
 )
 from analysis.position_sizer import PositionSizer
 
@@ -159,6 +160,22 @@ Examples:
         '--json',
         action='store_true',
         help='Output results as JSON'
+    )
+
+    # Sentiment Analysis arguments
+    sentiment_group = parser.add_argument_group('Sentiment Analysis')
+
+    sentiment_group.add_argument(
+        '--sentiment',
+        action='store_true',
+        help='Enable news sentiment analysis as risk filter (uses FinBERT)'
+    )
+
+    sentiment_group.add_argument(
+        '--sentiment-lookback',
+        type=int,
+        default=48,
+        help='Hours of news to analyze for sentiment (default: 48)'
     )
 
     # Quantum ML arguments
@@ -562,6 +579,33 @@ def main():
     # Create analyzer
     analyzer = OptionsAnalyzer(config)
 
+    # Initialize sentiment analyzer if enabled
+    sentiment_signals = None
+    if args.sentiment:
+        if not args.json:
+            console.print("[bold blue]Sentiment Analysis Enabled[/bold blue]")
+            console.print()
+
+        from analysis.sentiment import SentimentAnalyzer
+        sentiment_analyzer = SentimentAnalyzer(
+            use_finbert=True,
+            lookback_hours=args.sentiment_lookback,
+        )
+
+        symbols_for_sentiment = config.get_active_symbols()
+
+        if not args.json:
+            with console.status("[bold blue]Analyzing news sentiment...") as status:
+                sentiment_signals = sentiment_analyzer.analyze_symbols(symbols_for_sentiment)
+        else:
+            sentiment_signals = sentiment_analyzer.analyze_symbols(symbols_for_sentiment)
+
+        if sentiment_signals and not args.json:
+            model_info = sentiment_analyzer.get_model_info()
+            console.print(f"  Model: [cyan]{model_info['model_name']}[/cyan]")
+            console.print(f"  Analyzed: [cyan]{len(sentiment_signals)} symbols[/cyan]")
+            console.print()
+
     # Initialize QML scorer if enabled
     qml_scorer = None
     if args.qml:
@@ -594,6 +638,8 @@ def main():
         else:
             console.print(f"[cyan]Collateral Filter:[/cyan] Trades filtered by max loss vs ${config.capital.total_capital:,.0f} capital")
         console.print(f"[cyan]Strategies:[/cyan] {', '.join(args.strategies)}")
+        if args.sentiment and sentiment_signals:
+            console.print(f"[cyan]Sentiment:[/cyan] [blue]Enabled[/blue] (FinBERT, {args.sentiment_lookback}h lookback)")
         if args.qml and qml_scorer:
             console.print(f"[cyan]QML Scoring:[/cyan] [magenta]Enabled[/magenta] (trained on {args.qml_months} months)")
         if args.full_scan:
@@ -646,6 +692,10 @@ def main():
             f"Top {len(result.top_candidates)} Trade Candidates",
             show_all_columns=args.verbose
         )
+
+        # Show sentiment summary if enabled
+        if args.sentiment and sentiment_signals:
+            display_sentiment_summary(sentiment_signals)
 
         # Show volatility insights for top symbols
         if not args.no_vol and result.top_candidates:
