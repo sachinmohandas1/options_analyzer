@@ -10,6 +10,9 @@ A quantitative tool for scanning options chains across index ETFs and identifyin
 - **Capital Management**: Position sizing with risk limits and portfolio constraints
 - **Rich CLI Interface**: Beautiful terminal output with interactive mode
 - **Backtesting**: Historical strategy testing with up to 10 years of data
+- **Synthetic Chains**: After-hours analysis using Black-Scholes with cached IV surfaces
+- **Sentiment Analysis**: News-based risk filtering with FinBERT
+- **Quantum ML Scoring**: VQC-enhanced trade selection trained on backtest outcomes
 
 ## Installation
 
@@ -57,6 +60,10 @@ python main.py --json > results.json
 | `--top` | 20 | Number of top trades to show |
 | `--strategies` | csp put_spread call_spread iron_condor | Strategies to use |
 | `--no-vol` | false | Skip volatility analysis |
+| `--synthetic` | false | Enable synthetic chain fallback for after-hours |
+| `--synthetic-only` | false | Use only synthetic chains (ignore live data) |
+| `--refresh-iv` | false | Refresh IV surface cache (run during market hours) |
+| `--sentiment` | false | Enable news sentiment risk filter |
 | `-i, --interactive` | false | Interactive browse mode |
 | `-v, --verbose` | false | Verbose output |
 | `--json` | false | JSON output |
@@ -207,6 +214,48 @@ python main.py --backtest --start-date 2023-01-01 --end-date 2024-01-01 \
 
 For detailed documentation, see [docs/BACKTESTING.txt](docs/BACKTESTING.txt).
 
+## Synthetic Chains (After-Hours Analysis)
+
+Analyze options when markets are closed using theoretical Black-Scholes pricing with cached IV surfaces.
+
+### Quick Start
+
+```bash
+# Enable synthetic fallback (uses live when available, synthetic when not)
+python main.py --synthetic -s SPY QQQ IWM
+
+# Force synthetic only (useful for testing or weekend analysis)
+python main.py --synthetic-only -s SPY QQQ
+
+# Combine with sentiment for IV adjustment
+python main.py --synthetic --sentiment -s SPY QQQ
+
+# Refresh IV cache during market hours (recommended daily)
+python main.py --refresh-iv -s SPY QQQ IWM
+```
+
+### How It Works
+
+1. **Price Detection**: Fetches extended hours prices (pre/post market) when available
+2. **IV Surface**: Uses cached implied volatility data from last market session
+3. **Sentiment Adjustment**: Optionally adjusts IV based on news sentiment:
+   - Negative sentiment → Higher IV (fear premium)
+   - High news volume → Higher IV (event uncertainty)
+4. **Black-Scholes**: Prices options theoretically with skew modeling
+5. **Spread Simulation**: Generates realistic bid/ask spreads
+
+### Accuracy
+
+| Strike Type | Expected Accuracy |
+|-------------|-------------------|
+| ATM options | ±2-5% |
+| Near-term OTM | ±5-10% |
+| Deep OTM | ±10-20% |
+
+**Best Practice**: Run `--refresh-iv` during market hours to cache fresh IV data before after-hours analysis.
+
+For detailed documentation, see [docs/SYNTHETIC_CHAINS.txt](docs/SYNTHETIC_CHAINS.txt).
+
 ## Architecture
 
 ```
@@ -215,11 +264,13 @@ options_analyzer/
 │   ├── config.py      # Configuration management
 │   └── models.py      # Data models
 ├── data/
-│   └── fetcher.py     # Options chain data fetching
+│   ├── fetcher.py     # Options chain data fetching
+│   └── synthetic_chain.py  # After-hours synthetic pricing
 ├── analysis/
 │   ├── greeks.py      # Greeks calculations
 │   ├── volatility_surface.py  # Vol surface analysis
 │   ├── position_sizer.py      # Position sizing
+│   ├── sentiment.py           # News sentiment analysis (FinBERT)
 │   ├── quantum_scorer.py      # VQC-based trade scoring
 │   └── qml_integration.py     # Streamlined QML CLI integration
 ├── strategies/
