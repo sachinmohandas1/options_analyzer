@@ -46,11 +46,20 @@ class OptionsAnalyzer:
     8. Return final recommendations
     """
 
-    def __init__(self, config: Optional[AnalyzerConfig] = None):
+    def __init__(
+        self,
+        config: Optional[AnalyzerConfig] = None,
+        use_synthetic: bool = False,
+        sentiment_signals: Optional[Dict] = None
+    ):
         self.config = config or DEFAULT_CONFIG
 
         # Initialize components
-        self.data_fetcher = DataFetcher(self.config)
+        self.data_fetcher = DataFetcher(
+            self.config,
+            use_synthetic_fallback=use_synthetic,
+            sentiment_signals=sentiment_signals
+        )
         self.symbol_discovery = SymbolDiscovery(self.config)
         self.greeks_calculator = GreeksCalculator(self.config)
         self.vol_analyzer = VolatilitySurfaceAnalyzer(self.config)
@@ -59,12 +68,26 @@ class OptionsAnalyzer:
         # Price cache from discovery
         self._symbol_prices: Dict[str, float] = {}
 
+        # Synthetic mode flag
+        self.use_synthetic = use_synthetic
+
         # Initialize strategies
         self.strategies: List[BaseStrategy] = []
         self._init_strategies()
 
         # Results storage
         self.last_result: Optional[AnalysisResult] = None
+
+    def enable_synthetic_mode(self, enabled: bool = True, sentiment_signals: Optional[Dict] = None):
+        """Enable or disable synthetic chain generation."""
+        self.use_synthetic = enabled
+        self.data_fetcher.enable_synthetic_fallback(enabled)
+        if sentiment_signals:
+            self.data_fetcher.set_sentiment_signals(sentiment_signals)
+
+    def refresh_iv_surfaces(self, symbols: Optional[List[str]] = None) -> int:
+        """Refresh IV surface cache for synthetic chain generation."""
+        return self.data_fetcher.refresh_iv_surfaces(symbols)
 
     def _init_strategies(self):
         """Initialize enabled strategies."""

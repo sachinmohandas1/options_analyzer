@@ -95,6 +95,7 @@ def display_candidates_table(
     table.add_column("Strike(s)")
     table.add_column("Premium", justify="right")
     table.add_column("Collateral", justify="right")
+    table.add_column("Trade Ret", justify="right")
     table.add_column("Weekly Ret", justify="right")
     table.add_column("Prob Profit", justify="right")
     table.add_column("Score", justify="right")
@@ -117,6 +118,11 @@ def display_candidates_table(
         else:
             strikes = "/".join([f"{leg.strike:.0f}" for leg in c.legs])
 
+        # Color trade return (per-trade return percentage)
+        trade_ret = c.trade_return_pct / 100  # Convert from percentage to decimal for format_percent
+        trade_ret_color = "green" if trade_ret >= 0.01 else "yellow" if trade_ret >= 0.005 else "red"
+        trade_ret_str = f"[{trade_ret_color}]{format_percent(trade_ret)}[/{trade_ret_color}]"
+
         # Color weekly return
         weekly_ret = c.weekly_return
         ret_color = "green" if weekly_ret >= 0.01 else "yellow" if weekly_ret >= 0.005 else "red"
@@ -138,6 +144,7 @@ def display_candidates_table(
             strikes,
             format_currency(c.premium_received),
             format_currency(c.collateral_required),
+            trade_ret_str,
             weekly_ret_str,
             prob_str,
             score_str,

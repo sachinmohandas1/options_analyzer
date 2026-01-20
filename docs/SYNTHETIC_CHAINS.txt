@@ -1,0 +1,199 @@
+================================================================================
+                        SYNTHETIC OPTIONS CHAIN GENERATOR
+================================================================================
+
+OVERVIEW
+--------
+The synthetic chain generator creates theoretical option prices using Black-
+Scholes when live market data is unavailable. This enables analysis during
+extended hours, weekends, or when exchanges return stale/missing data.
+
+Location: data/synthetic_chain.py
+
+
+HOW IT WORKS
+------------
+1. Get current stock price (including pre/post market quotes)
+2. Load cached IV surface from last market session (or build from historical vol)
+3. Apply sentiment-based adjustments to IV
+4. Generate strike prices across configured range
+5. Price each option using Black-Scholes
+6. Simulate realistic bid/ask spreads
+7. Calculate Greeks (delta, gamma, theta, vega)
+
+
+USAGE
+-----
+Command Line:
+
+    # Enable synthetic fallback (uses live data when available, synthetic when not)
+    python main.py --synthetic -s SPY QQQ IWM
+
+    # Force synthetic only (ignores live data entirely)
+    python main.py --synthetic-only -s SPY QQQ
+
+    # Combine with sentiment for IV adjustment
+    python main.py --synthetic --sentiment -s SPY QQQ
+
+    # Refresh IV cache during market hours (recommended daily)
+    python main.py --refresh-iv -s SPY QQQ IWM
+
+Programmatic:
+
+    from data.synthetic_chain import SyntheticChainGenerator
+    from core.config import DEFAULT_CONFIG
+
+    generator = SyntheticChainGenerator(DEFAULT_CONFIG)
+
+    # Basic generation
+    chain = generator.generate_chain("SPY")
+
+    # With sentiment adjustment
+    from core.models import SentimentSignal
+    sentiment = SentimentSignal(sentiment_score=-0.5, ...)
+    chain = generator.generate_chain("SPY", sentiment_signal=sentiment)
+
+
+IV SURFACE CACHING
+------------------
+The generator caches IV surfaces to disk for use when markets are closed.
+
+Cache location: .iv_cache/iv_surfaces.json
+Cache TTL: 24 hours (configurable)
+
+What's cached per symbol:
+- ATM IV by DTE (days to expiration)
+- Put skew slope (how IV changes for OTM puts)
+- Call skew slope (how IV changes for OTM calls)
+- Term structure slope (how IV changes across expirations)
+- Historical volatility (fallback)
+- IV rank at cache time
+
+Best Practice:
+Run --refresh-iv during market hours to capture current IV levels before
+the market closes. This ensures after-hours analysis uses fresh data.
+
+
+SENTIMENT-BASED IV ADJUSTMENT
+-----------------------------
+When sentiment data is provided, IV is adjusted to reflect market conditions:
+
+    Signal                      IV Effect
+    -------------------------   -----------------
+    Negative sentiment (-1.0)   +5% IV (fear premium)
+    Positive sentiment (+1.0)   -2% IV (complacency)
+    High news volume            +3% IV (event uncertainty)
+    Rapid sentiment shift       +2% IV (instability)
+    "high_risk" flag            +3% IV
+    "elevated" flag             +1% IV
+
+The asymmetry (fear adds more IV than greed removes) reflects real market
+behavior where implied volatility spikes more on fear than it drops on calm.
+
+
+STRIKE GENERATION
+-----------------
+Strikes are generated around the current price:
+
+    Default range: +/- 15% from current price
+    Default spacing: 1% of price (minimum $0.50)
+
+    Spacing is rounded to standard increments:
+    - $0.50 for low-priced stocks
+    - $1.00 for mid-priced
+    - $2.50 for higher-priced
+    - $5.00 for expensive stocks
+
+
+EXPIRATION GENERATION
+---------------------
+By default, generates weekly expirations (Fridays) within the configured
+DTE range. Falls back to nearest weekday if no Friday exists in range.
+
+
+BID/ASK SPREAD SIMULATION
+-------------------------
+Synthetic chains simulate realistic spreads:
+
+    ATM options: 2% spread
+    Far OTM options: 5% spread
+
+    Spread widens linearly as options move away from ATM.
+
+
+ACCURACY EXPECTATIONS
+---------------------
+Strike Type             Expected Accuracy    Notes
+--------------------    -----------------    ---------------------------
+ATM options             +/- 2-5%             Most reliable
+Near-term OTM           +/- 5-10%            Skew modeling helps
+Deep OTM                +/- 10-20%           Less reliable
+Far-dated               +/- 10-15%           Term structure extrapolated
+After major news        Unreliable           IV will be wrong until refresh
+
+Factors that degrade accuracy:
+- Overnight gaps / earnings announcements
+- Sudden volatility regime changes
+- Dividend expectations (not modeled)
+- Interest rate changes
+
+
+CONFIGURATION
+-------------
+SyntheticChainConfig options:
+
+    strike_range_pct = 0.15      # +/- 15% from current price
+    strike_spacing_pct = 0.01    # 1% spacing
+    min_strike_spacing = 0.5     # Minimum $0.50
+    min_dte = 1                  # Minimum days to expiration
+    max_dte = 7                  # Maximum days to expiration
+    cache_ttl_hours = 24         # IV cache validity
+    sentiment_iv_scale = 0.05    # Max sentiment IV adjustment (+/- 5%)
+    news_volume_iv_scale = 0.03  # Max news volume IV adjustment (+3%)
+    spread_pct_atm = 0.02        # 2% spread for ATM
+    spread_pct_otm = 0.05        # 5% spread for far OTM
+
+
+INTEGRATION WITH ANALYZER
+-------------------------
+The synthetic generator integrates with the main analyzer via DataFetcher:
+
+    # In DataFetcher
+    fetcher = DataFetcher(config, use_synthetic_fallback=True)
+    chain = fetcher.fetch_chain("SPY")  # Uses synthetic if live fails
+
+    # In OptionsAnalyzer
+    analyzer = OptionsAnalyzer(config, use_synthetic=True)
+    result = analyzer.run()  # Automatically uses synthetic when needed
+
+
+LIMITATIONS
+-----------
+1. No volume/open interest data (set to 0)
+2. Greeks are theoretical (may differ from market-implied)
+3. Cannot capture event-driven IV spikes in real-time
+4. Skew model is simplified (linear, not smile-shaped)
+5. No dividend adjustment in Black-Scholes
+6. Extended hours prices may have wider spreads than modeled
+
+
+TROUBLESHOOTING
+---------------
+Problem: Synthetic prices seem way off
+- Run --refresh-iv during market hours to update IV cache
+- Check if there was major news that changed IV regime
+
+Problem: "No IV surface available" warnings
+- The symbol hasn't been cached yet
+- Run with --refresh-iv first, or let it use historical vol fallback
+
+Problem: Missing expirations
+- Check min_dte/max_dte configuration
+- Weekly options may not exist for all underlyings
+
+
+FILES
+-----
+data/synthetic_chain.py     Main generator module
+.iv_cache/                  Cache directory (auto-created)
+.iv_cache/iv_surfaces.json  Persisted IV surface data

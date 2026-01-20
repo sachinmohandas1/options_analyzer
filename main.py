@@ -162,6 +162,27 @@ Examples:
         help='Output results as JSON'
     )
 
+    # Synthetic chain arguments
+    synthetic_group = parser.add_argument_group('Synthetic Chain Generation')
+
+    synthetic_group.add_argument(
+        '--synthetic',
+        action='store_true',
+        help='Enable synthetic chain fallback when live data unavailable (for after-hours analysis)'
+    )
+
+    synthetic_group.add_argument(
+        '--synthetic-only',
+        action='store_true',
+        help='Use only synthetic chains (ignore live data)'
+    )
+
+    synthetic_group.add_argument(
+        '--refresh-iv',
+        action='store_true',
+        help='Refresh IV surface cache before analysis (run during market hours)'
+    )
+
     # Sentiment Analysis arguments
     sentiment_group = parser.add_argument_group('Sentiment Analysis')
 
@@ -576,10 +597,7 @@ def main():
     if args.symbols:
         config.underlyings.default_symbols = args.symbols
 
-    # Create analyzer
-    analyzer = OptionsAnalyzer(config)
-
-    # Initialize sentiment analyzer if enabled
+    # Initialize sentiment analyzer early if enabled (needed for synthetic mode)
     sentiment_signals = None
     if args.sentiment:
         if not args.json:
@@ -605,6 +623,34 @@ def main():
             console.print(f"  Model: [cyan]{model_info['model_name']}[/cyan]")
             console.print(f"  Analyzed: [cyan]{len(sentiment_signals)} symbols[/cyan]")
             console.print()
+
+    # Determine synthetic mode
+    use_synthetic = args.synthetic or args.synthetic_only
+
+    # Create analyzer with synthetic mode
+    analyzer = OptionsAnalyzer(
+        config,
+        use_synthetic=use_synthetic,
+        sentiment_signals=sentiment_signals
+    )
+
+    # Refresh IV surfaces if requested (best done during market hours)
+    if args.refresh_iv:
+        if not args.json:
+            console.print("[bold yellow]Refreshing IV surface cache...[/bold yellow]")
+        refreshed = analyzer.refresh_iv_surfaces()
+        if not args.json:
+            console.print(f"  Refreshed: [cyan]{refreshed} symbols[/cyan]")
+            console.print()
+
+    # Show synthetic mode status
+    if use_synthetic and not args.json:
+        mode_desc = "Synthetic only" if args.synthetic_only else "Synthetic fallback"
+        console.print(f"[bold yellow]Synthetic Chain Mode:[/bold yellow] {mode_desc}")
+        console.print("  Using Black-Scholes with cached IV surfaces")
+        if sentiment_signals:
+            console.print("  IV adjusted for news sentiment")
+        console.print()
 
     # Initialize QML scorer if enabled
     qml_scorer = None

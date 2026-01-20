@@ -170,7 +170,7 @@ class TradeCandidate:
     @property
     def weekly_return(self) -> float:
         """
-        Return projected to a weekly basis.
+        Return projected to a weekly basis (5 business days).
 
         Note: For very short DTE trades (1-2 days), this extrapolation
         may overstate achievable returns since you can't always roll
@@ -178,9 +178,9 @@ class TradeCandidate:
         actual per-trade return.
         """
         if self.dte > 0 and self.return_on_collateral > 0:
-            # Scale return to 7-day basis
+            # Scale return to 5-day (business week) basis
             # Cap at 5x the per-trade return to avoid extreme extrapolation
-            raw_weekly = (self.return_on_collateral / self.dte) * 7
+            raw_weekly = (self.return_on_collateral / self.dte) * 5
             return min(raw_weekly, self.return_on_collateral * 5)
         return 0.0
 

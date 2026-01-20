@@ -7,7 +7,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, date, timedelta
-from typing import List, Dict, Optional, Tuple, Protocol
+from typing import List, Dict, Optional, Tuple, Protocol, Any
 from abc import ABC, abstractmethod
 import logging
 
@@ -464,41 +464,117 @@ class DataFetcher:
     """
     Main data fetching orchestrator.
     Supports multiple providers and caching.
+
+    When markets are closed, can optionally fall back to synthetic chains
+    generated using Black-Scholes with cached IV surfaces and sentiment
+    adjustments.
     """
 
-    def __init__(self, config: AnalyzerConfig, provider: Optional[DataProvider] = None):
+    def __init__(
+        self,
+        config: AnalyzerConfig,
+        provider: Optional[DataProvider] = None,
+        use_synthetic_fallback: bool = False,
+        sentiment_signals: Optional[Dict[str, Any]] = None
+    ):
         self.config = config
         self.provider = provider or YFinanceProvider(config)
         self._cache: Dict[str, OptionsChain] = {}
         self._cache_time: Dict[str, datetime] = {}
         self._cache_ttl = timedelta(minutes=5)  # 5-minute cache
 
-    def fetch_chain(self, symbol: str, use_cache: bool = True) -> Optional[OptionsChain]:
-        """Fetch options chain for a single symbol."""
+        # Synthetic chain fallback
+        self.use_synthetic_fallback = use_synthetic_fallback
+        self.sentiment_signals = sentiment_signals or {}
+        self._synthetic_generator = None
+
+        if use_synthetic_fallback:
+            self._init_synthetic_generator()
+
+    def _init_synthetic_generator(self):
+        """Initialize the synthetic chain generator (lazy load)."""
+        try:
+            from data.synthetic_chain import SyntheticChainGenerator
+            self._synthetic_generator = SyntheticChainGenerator(self.config)
+            logger.info("Synthetic chain generator initialized")
+        except ImportError as e:
+            logger.warning(f"Could not initialize synthetic generator: {e}")
+            self._synthetic_generator = None
+
+    def set_sentiment_signals(self, signals: Dict[str, Any]):
+        """Set sentiment signals for synthetic IV adjustment."""
+        self.sentiment_signals = signals
+
+    def enable_synthetic_fallback(self, enabled: bool = True):
+        """Enable or disable synthetic chain fallback."""
+        self.use_synthetic_fallback = enabled
+        if enabled and self._synthetic_generator is None:
+            self._init_synthetic_generator()
+
+    def fetch_chain(
+        self,
+        symbol: str,
+        use_cache: bool = True,
+        allow_synthetic: bool = True
+    ) -> Optional[OptionsChain]:
+        """
+        Fetch options chain for a single symbol.
+
+        Args:
+            symbol: Stock/ETF symbol
+            use_cache: Use cached data if available
+            allow_synthetic: Allow fallback to synthetic chain if live data fails
+
+        Returns:
+            OptionsChain or None
+        """
         # Check cache
         if use_cache and symbol in self._cache:
             if datetime.now() - self._cache_time[symbol] < self._cache_ttl:
                 logger.debug(f"Using cached data for {symbol}")
                 return self._cache[symbol]
 
-        # Fetch fresh data
+        # Fetch fresh data from provider
         chain = self.provider.get_options_chain(symbol)
 
         if chain:
             self._cache[symbol] = chain
             self._cache_time[symbol] = datetime.now()
+            return chain
 
-        return chain
+        # Fallback to synthetic chain if enabled
+        if allow_synthetic and self.use_synthetic_fallback and self._synthetic_generator:
+            logger.info(f"{symbol}: Live data unavailable, generating synthetic chain")
+            sentiment = self.sentiment_signals.get(symbol)
+            chain = self._synthetic_generator.generate_chain(symbol, sentiment)
 
-    def fetch_all_chains(self, symbols: Optional[List[str]] = None) -> Dict[str, OptionsChain]:
-        """Fetch options chains for all configured symbols."""
+            if chain:
+                # Mark as synthetic in the chain (could add a flag to OptionsChain)
+                self._cache[symbol] = chain
+                self._cache_time[symbol] = datetime.now()
+                return chain
+
+        return None
+
+    def fetch_all_chains(
+        self,
+        symbols: Optional[List[str]] = None,
+        allow_synthetic: bool = True
+    ) -> Dict[str, OptionsChain]:
+        """
+        Fetch options chains for all configured symbols.
+
+        Args:
+            symbols: List of symbols (uses config if None)
+            allow_synthetic: Allow synthetic fallback for failed fetches
+        """
         if symbols is None:
             symbols = self.config.get_active_symbols()
 
         chains = {}
         for symbol in symbols:
             logger.info(f"Fetching options chain for {symbol}...")
-            chain = self.fetch_chain(symbol)
+            chain = self.fetch_chain(symbol, allow_synthetic=allow_synthetic)
             if chain:
                 chains[symbol] = chain
             else:
@@ -510,3 +586,31 @@ class DataFetcher:
         """Clear the data cache."""
         self._cache.clear()
         self._cache_time.clear()
+
+    def refresh_iv_surfaces(self, symbols: Optional[List[str]] = None) -> int:
+        """
+        Refresh cached IV surfaces for synthetic chain generation.
+
+        Call this during market hours to update IV data for after-hours use.
+
+        Returns:
+            Number of surfaces successfully refreshed
+        """
+        if self._synthetic_generator is None:
+            self._init_synthetic_generator()
+
+        if self._synthetic_generator is None:
+            logger.warning("Synthetic generator not available")
+            return 0
+
+        if symbols is None:
+            symbols = self.config.get_active_symbols()
+
+        refreshed = 0
+        for symbol in symbols:
+            if self._synthetic_generator.refresh_iv_surface(symbol):
+                refreshed += 1
+                logger.debug(f"Refreshed IV surface for {symbol}")
+
+        logger.info(f"Refreshed IV surfaces for {refreshed}/{len(symbols)} symbols")
+        return refreshed
