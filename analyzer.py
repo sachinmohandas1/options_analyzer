@@ -110,6 +110,44 @@ class OptionsAnalyzer:
         self.strategies.append(strategy)
         logger.info(f"Added custom strategy: {strategy.name}")
 
+    def _prefetch_risk_data(self, symbols: List[str]) -> None:
+        """
+        Pre-fetch risk data (earnings, historical returns) for all symbols.
+
+        This populates the caches before candidate processing, avoiding
+        redundant API calls when processing multiple candidates per symbol.
+        """
+        try:
+            from analysis.risk_metrics import (
+                _get_singleton_earnings_calendar,
+                _get_singleton_cvar_calculator
+            )
+
+            earnings_cal = _get_singleton_earnings_calendar()
+            cvar_calc = _get_singleton_cvar_calculator()
+
+            total = len(symbols)
+            for i, symbol in enumerate(symbols):
+                if (i + 1) % 50 == 0 or i == 0:
+                    logger.info(f"Pre-fetching risk data: {i + 1}/{total} symbols...")
+
+                # Pre-fetch earnings (will be cached)
+                try:
+                    earnings_cal.get_next_earnings(symbol)
+                except Exception:
+                    pass
+
+                # Pre-fetch historical returns for CVaR (will be cached)
+                try:
+                    cvar_calc.get_historical_returns(symbol)
+                except Exception:
+                    pass
+
+            logger.info(f"Risk data pre-fetch complete for {total} symbols")
+
+        except ImportError:
+            logger.debug("Risk metrics module not available for pre-fetching")
+
     def run_analysis(
         self,
         symbols: Optional[List[str]] = None,
@@ -159,7 +197,12 @@ class OptionsAnalyzer:
             logger.warning("No options chains fetched")
             return result
 
-        # 2. Process each chain
+        # 2. Pre-fetch risk data for all symbols (earnings, historical returns)
+        # This populates the caches before candidate processing
+        logger.info("Pre-fetching risk data for all symbols...")
+        self._prefetch_risk_data(list(chains.keys()))
+
+        # 3. Process each chain
         all_candidates = []
 
         for symbol, chain in chains.items():
@@ -189,22 +232,27 @@ class OptionsAnalyzer:
                     # Filter by criteria
                     filtered = strategy.filter_by_criteria(candidates)
 
+                    # Enrich and score each candidate with the new scoring system
+                    for candidate in filtered:
+                        strategy.enrich_candidate(candidate, chain)
+                        strategy.score_candidate(candidate, chain)
+
                     all_candidates.extend(filtered)
 
             except Exception as e:
                 logger.error(f"Error processing {symbol}: {e}")
                 result.errors.append({'symbol': symbol, 'error': str(e)})
 
-        # 3. Store all candidates
+        # 4. Store all candidates
         result.all_candidates = all_candidates
         result.total_opportunities_found = len(all_candidates)
 
-        # 4. Final filtering by capital
+        # 5. Final filtering by capital
         capital_filtered = self.position_sizer.filter_by_capital(all_candidates)
         result.filtered_candidates = capital_filtered
         result.opportunities_meeting_criteria = len(capital_filtered)
 
-        # 5. Sort by score and get top candidates
+        # 6. Sort by score and get top candidates
         sorted_candidates = sorted(
             capital_filtered,
             key=lambda x: x.overall_score,
@@ -212,7 +260,7 @@ class OptionsAnalyzer:
         )
         result.top_candidates = sorted_candidates[:self.config.top_n_trades]
 
-        # 6. Calculate deployable capital
+        # 7. Calculate deployable capital
         result.capital_deployable = sum(
             c.collateral_required for c in result.top_candidates
         )

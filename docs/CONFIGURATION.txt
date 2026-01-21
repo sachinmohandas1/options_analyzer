@@ -161,8 +161,79 @@ AVAILABLE OPTIONS:
 OTHER SETTINGS
 ================================================================================
 
-  risk_free_rate = 0.05     # 5% for Greeks calculations
+  risk_free_rate = 0.05     # Default for Greeks (overridden by live 10Y Treasury)
   top_n_trades = 20         # Number of trades to display
+
+
+================================================================================
+RELIABILITY SETTINGS (v2.0)
+================================================================================
+
+Rate limiting and retry settings are in data/fetcher.py:
+
+RATE LIMITING:
+  requests_per_second = 5.0   # Token bucket rate
+  burst_size = 10             # Maximum burst capacity
+
+RETRY LOGIC:
+  max_retries = 3             # Number of retry attempts
+  base_delay = 1.0            # Initial delay in seconds
+  max_delay = 30.0            # Maximum delay cap
+
+MARKET DATA CACHE:
+  cache_ttl_hours = 4         # Cache duration for risk-free rate, dividends
+
+These are currently hardcoded but can be modified in fetcher.py.
+
+
+================================================================================
+RISK METRICS SETTINGS (v2.0)
+================================================================================
+
+Settings in analysis/risk_metrics.py:
+
+EARNINGS CALENDAR:
+  Risk levels based on days to earnings:
+  - "high": Earnings within trade window (before expiration)
+  - "elevated": Earnings within 3 days after expiration
+  - "low": No nearby earnings
+
+CVaR CALCULATION:
+  lookback_days = 252         # 1 year of trading days
+  confidence_levels = [0.95, 0.99]  # 95% and 99% CVaR
+
+LIQUIDITY SCORING:
+  spread_weight = 0.40        # Bid-ask spread importance
+  oi_weight = 0.35            # Open interest importance
+  volume_weight = 0.25        # Daily volume importance
+
+  Thresholds:
+    spread_threshold = 0.05   # 5% spread = score of 0
+    oi_threshold = 1000       # 1000+ OI = score of 100
+    volume_threshold = 500    # 500+ volume = score of 100
+
+
+================================================================================
+SCORING WEIGHTS (v2.0)
+================================================================================
+
+Enhanced scorer weights in strategies/base.py:
+
+BASE SCORE WEIGHTS:
+  weekly_return = 0.25        # 25% weight
+  prob_profit = 0.25          # 25% weight
+  liquidity = 0.20            # 20% weight
+  iv_rank = 0.15              # 15% weight
+  theta_efficiency = 0.15     # 15% weight
+
+RISK MULTIPLIERS:
+  earnings_in_window = 0.5    # 50% penalty
+  near_earnings = 0.7         # 30% penalty (within 3 days)
+  stressed_regime = 0.7       # 30% penalty
+  low_vol_regime = 0.9        # 10% penalty
+  high_cvar_min = 0.7         # Minimum multiplier for high CVaR
+
+To customize weights, modify EnhancedScorer.__init__ in strategies/base.py.
 
 
 ================================================================================

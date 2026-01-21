@@ -1,0 +1,334 @@
+OPTIONS ANALYZER - RISK METRICS GUIDE
+=====================================
+
+This document explains the risk assessment features added in v2.0.
+All risk metrics are in: analysis/risk_metrics.py
+
+
+================================================================================
+OVERVIEW
+================================================================================
+
+The risk metrics system provides comprehensive risk assessment for trade
+candidates, including:
+
+1. Earnings Calendar - Avoid trades around earnings announcements
+2. CVaR (Expected Shortfall) - Tail risk measurement
+3. Liquidity Scoring - Trade execution quality assessment
+4. Combined Risk Assessment - Unified risk evaluation
+
+These metrics are used by the EnhancedScorer to adjust trade scores.
+
+
+================================================================================
+EARNINGS CALENDAR
+================================================================================
+
+CONCEPT:
+  Options positions can experience extreme moves around earnings. The
+  earnings calendar checks if a trade's expiration window includes an
+  earnings announcement, allowing the system to flag or penalize such trades.
+
+CLASSES:
+  - EarningsEvent: Data class for a single earnings date
+  - EarningsCalendar: Fetches and caches earnings dates
+
+RISK LEVELS:
+  - "high": Earnings fall BEFORE the trade's expiration
+    → The trade will be open during earnings (most risky)
+  - "elevated": Earnings within 3 days AFTER expiration
+    → IV crush and momentum effects may still impact
+  - "low": No earnings nearby
+
+USAGE:
+
+  from analysis.risk_metrics import EarningsCalendar
+  from datetime import date
+
+  calendar = EarningsCalendar()
+  risk_level, days_to_earnings = calendar.get_earnings_risk("AAPL", date(2024, 2, 15))
+
+  print(f"Risk: {risk_level}, Days: {days_to_earnings}")
+  # Output: Risk: high, Days: 3
+
+DATA SOURCE:
+  Uses yfinance to fetch the next earnings date. Falls back gracefully
+  if data is unavailable.
+
+CACHING:
+  Earnings dates are cached per symbol to reduce API calls within a session.
+
+HOW IT'S USED IN SCORING:
+  - earnings_in_window = True → 0.5× multiplier (50% penalty)
+  - days_to_earnings <= 3 → 0.7× multiplier (30% penalty)
+
+
+================================================================================
+CVaR (CONDITIONAL VALUE AT RISK)
+================================================================================
+
+CONCEPT:
+  CVaR, also known as Expected Shortfall, measures the average loss in the
+  worst X% of scenarios. Unlike VaR which only tells you the threshold,
+  CVaR tells you how bad it gets when things go wrong.
+
+  Example at 95% confidence:
+  - VaR: "There's a 5% chance of losing more than $500"
+  - CVaR: "When we do lose more than $500, the average loss is $750"
+
+WHY CVaR > VaR:
+  1. CVaR is coherent (satisfies subadditivity)
+  2. CVaR captures tail severity, not just probability
+  3. CVaR is preferred by risk managers for tail risk
+
+CALCULATION METHOD:
+
+  1. Fetch 252 days of historical returns
+  2. Calculate VaR at the specified percentile
+  3. Average all returns worse than VaR
+
+  def calculate_cvar(returns, confidence=0.95):
+      var_percentile = (1 - confidence) * 100  # 5 for 95%
+      var = np.percentile(returns, var_percentile)
+      tail_returns = returns[returns <= var]
+      cvar = np.mean(tail_returns)
+      return abs(cvar)
+
+CLASSES:
+  - CVaRCalculator: Fetches returns and calculates CVaR
+
+USAGE:
+
+  from analysis.risk_metrics import CVaRCalculator
+
+  calc = CVaRCalculator()
+  returns = calc.get_historical_returns("SPY")
+
+  cvar_95 = calc.calculate_cvar(returns, 0.95)
+  cvar_99 = calc.calculate_cvar(returns, 0.99)
+
+  print(f"CVaR 95%: {cvar_95:.2%}")  # e.g., "CVaR 95%: 2.34%"
+  print(f"CVaR 99%: {cvar_99:.2%}")  # e.g., "CVaR 99%: 3.87%"
+
+INTERPRETATION:
+  - CVaR 95% of 2.34% means: On the worst 5% of days, the average
+    daily loss is 2.34%
+  - Higher CVaR = more tail risk = riskier underlying
+
+HOW IT'S USED IN SCORING:
+  - CVaR > 5% daily triggers a graduated penalty
+  - Multiplier = max(0.7, 1 - (cvar - 0.05) * 5)
+  - Example: 7% CVaR → multiplier = 0.9 (10% penalty)
+
+
+================================================================================
+LIQUIDITY SCORING
+================================================================================
+
+CONCEPT:
+  Liquidity determines how easily you can enter and exit positions at
+  fair prices. Poor liquidity means wide spreads and slippage.
+
+COMPOSITE SCORE (0-100):
+  The liquidity score combines three factors with different weights:
+
+  Liquidity = (Spread Score × 40%) + (OI Score × 35%) + (Volume Score × 25%)
+
+SPREAD SCORE (40% weight):
+  Measures bid-ask spread tightness.
+
+  spread_pct = (ask - bid) / mid_price
+  spread_score = max(0, 100 - spread_pct × 2000)
+
+  Examples:
+  - 0% spread → 100 score
+  - 2.5% spread → 50 score
+  - 5% spread → 0 score
+
+OPEN INTEREST SCORE (35% weight):
+  Measures market depth and position sizing capacity.
+
+  oi_score = min(100, (open_interest / 1000) × 100)
+
+  Examples:
+  - 0 OI → 0 score
+  - 500 OI → 50 score
+  - 1000+ OI → 100 score
+
+VOLUME SCORE (25% weight):
+  Measures daily trading activity.
+
+  volume_score = min(100, (volume / 500) × 100)
+
+  Examples:
+  - 0 volume → 0 score
+  - 250 volume → 50 score
+  - 500+ volume → 100 score
+
+CLASSES:
+  - LiquidityScorer: Calculates composite liquidity score
+
+USAGE:
+
+  from analysis.risk_metrics import LiquidityScorer
+
+  scorer = LiquidityScorer()
+
+  # Score a single contract
+  score = scorer.score_contract(
+      bid=1.50,
+      ask=1.55,
+      mid=1.525,
+      open_interest=800,
+      volume=300
+  )
+  print(f"Liquidity: {score:.1f}")  # e.g., "Liquidity: 72.5"
+
+  # Score multiple contracts (for spreads)
+  contracts = [...]  # List of OptionContract objects
+  composite = scorer.score_contracts(contracts)
+
+WHY THESE WEIGHTS:
+  - Spread (40%): Most directly impacts execution cost
+  - OI (35%): Indicates position sizing capacity
+  - Volume (25%): Shows current market interest
+
+MINIMUM REQUIREMENTS:
+  The system also has hard minimum requirements (from TradeCriteria):
+  - min_open_interest = 100
+  - min_volume = 50
+  - max_bid_ask_spread_pct = 5.0
+
+  Contracts failing these are filtered out before scoring.
+
+
+================================================================================
+COMBINED RISK ASSESSMENT
+================================================================================
+
+The RiskAssessor class combines all risk metrics into a unified assessment.
+
+CLASSES:
+  - RiskMetrics: Data class holding all risk measurements
+  - RiskAssessor: Orchestrates risk evaluation
+
+RiskMetrics FIELDS:
+  - cvar_95: CVaR at 95% confidence (float)
+  - cvar_99: CVaR at 99% confidence (float)
+  - earnings_date: Next earnings date (Optional[date])
+  - days_to_earnings: Days until earnings (Optional[int])
+  - earnings_risk_flag: "low", "elevated", or "high"
+  - liquidity_score: Composite score 0-100 (float)
+  - historical_volatility: HV for reference (Optional[float])
+
+USAGE:
+
+  from analysis.risk_metrics import RiskAssessor
+  from datetime import date
+
+  assessor = RiskAssessor()
+
+  # Assess risk for a trade
+  metrics = assessor.assess_trade_risk(
+      symbol="AAPL",
+      expiration=date(2024, 2, 15),
+      max_loss=500.0,
+      dte=5,
+      contracts=[...]  # List of OptionContract
+  )
+
+  print(f"CVaR 95%: {metrics.cvar_95:.2%}")
+  print(f"Earnings Risk: {metrics.earnings_risk_flag}")
+  print(f"Liquidity: {metrics.liquidity_score:.1f}")
+
+INTEGRATION WITH SCORING:
+  The BaseStrategy.enrich_candidate() method automatically calls
+  RiskAssessor and stores metrics on the TradeCandidate:
+
+  candidate._risk_metrics = risk_metrics
+  candidate._earnings_risk = risk_metrics.earnings_risk_flag
+  candidate._cvar_95 = risk_metrics.cvar_95
+
+
+================================================================================
+PRACTICAL EXAMPLES
+================================================================================
+
+EXAMPLE 1: High-risk trade flagging
+
+  # Trade on TSLA expiring in 4 days
+  # Earnings are in 2 days
+
+  calendar = EarningsCalendar()
+  risk, days = calendar.get_earnings_risk("TSLA", expiration_date)
+  # risk = "high", days = 2
+
+  # This trade would get a 0.5× multiplier in scoring
+  # Score of 80 becomes 40
+
+EXAMPLE 2: Comparing tail risk
+
+  calc = CVaRCalculator()
+
+  spy_cvar = calc.calculate_cvar(calc.get_historical_returns("SPY"), 0.95)
+  arkk_cvar = calc.calculate_cvar(calc.get_historical_returns("ARKK"), 0.95)
+
+  # spy_cvar ≈ 1.5% (low tail risk)
+  # arkk_cvar ≈ 4.0% (higher tail risk)
+
+  # ARKK trades may receive CVaR penalty if > 5%
+
+EXAMPLE 3: Liquidity filtering
+
+  scorer = LiquidityScorer()
+
+  # Liquid option: SPY weekly
+  spy_score = scorer.score_contract(1.50, 1.51, 1.505, 50000, 10000)
+  # spy_score ≈ 95 (excellent)
+
+  # Illiquid option: Small cap stock
+  small_score = scorer.score_contract(0.50, 0.80, 0.65, 50, 5)
+  # small_score ≈ 15 (poor)
+
+  # The small cap option contributes less to overall score
+
+
+================================================================================
+CONFIGURATION
+================================================================================
+
+Current settings (hardcoded in risk_metrics.py):
+
+EARNINGS:
+  No configuration - uses yfinance data
+
+CVaR:
+  lookback_days = 252 (1 year of trading days)
+
+LIQUIDITY:
+  spread_weight = 0.40
+  oi_weight = 0.35
+  volume_weight = 0.25
+  spread_max = 0.05 (5%)
+  oi_threshold = 1000
+  volume_threshold = 500
+
+To customize, modify the respective classes in analysis/risk_metrics.py.
+
+
+================================================================================
+FUTURE ENHANCEMENTS
+================================================================================
+
+PLANNED:
+  1. Market regime detection (HMM-based)
+  2. Sector correlation limits
+  3. Real-time IV rank calculation
+  4. ORATS integration for professional IV data
+  5. Portfolio-level CVaR aggregation
+
+POSSIBLE:
+  1. Configurable thresholds via CLI
+  2. Risk budget allocation
+  3. Correlation-adjusted position limits
+  4. Greeks-based stress testing

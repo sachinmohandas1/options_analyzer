@@ -23,20 +23,33 @@ options_analyzer/
 │
 ├── data/                  # Data fetching
 │   ├── __init__.py
-│   ├── fetcher.py         # yfinance data provider
-│   └── discovery.py       # Symbol discovery and price filtering
+│   ├── fetcher.py         # yfinance data provider (with retry/rate limiting)
+│   ├── discovery.py       # Symbol discovery and price filtering
+│   ├── synthetic_chain.py # After-hours synthetic options pricing
+│   └── news_fetcher.py    # News data fetching for sentiment
 │
 ├── analysis/              # Analysis modules
 │   ├── __init__.py
-│   ├── greeks.py          # Greeks calculations
+│   ├── greeks.py          # Greeks (Black-Scholes + Bjerksund-Stensland)
 │   ├── volatility_surface.py  # Vol surface analysis
-│   └── position_sizer.py  # Position sizing logic
+│   ├── position_sizer.py  # Position sizing logic
+│   ├── risk_metrics.py    # CVaR, earnings calendar, liquidity scoring
+│   ├── sentiment.py       # News sentiment analysis (FinBERT)
+│   ├── quantum_scorer.py  # VQC-based trade scoring
+│   └── qml_integration.py # QML CLI integration
 │
 ├── strategies/            # Trading strategies
 │   ├── __init__.py
-│   ├── base.py            # BaseStrategy abstract class
+│   ├── base.py            # BaseStrategy + EnhancedScorer
 │   ├── secured_premium.py # CSP, Covered Calls
-│   └── credit_spreads.py  # Put/Call credit spreads
+│   └── credit_spreads.py  # Put/Call credit spreads, Iron Condors
+│
+├── backtesting/           # Historical backtesting
+│   ├── __init__.py
+│   ├── historical_data.py # Yahoo Finance + Black-Scholes synthesis
+│   ├── backtester.py      # Main simulation engine
+│   ├── trade_manager.py   # Trade lifecycle management
+│   └── performance.py     # Metrics calculation
 │
 ├── ui/                    # User interface
 │   ├── __init__.py
@@ -47,6 +60,10 @@ options_analyzer/
     ├── STRATEGIES.txt
     ├── CONFIGURATION.txt
     ├── VOLATILITY_ANALYSIS.txt
+    ├── RISK_METRICS.txt
+    ├── BACKTESTING.txt
+    ├── SYNTHETIC_CHAINS.txt
+    ├── QUANTUM_SCORER.txt
     └── ARCHITECTURE.txt
 
 
@@ -64,17 +81,24 @@ DATA FLOW
    ▼
 3. SYMBOL DISCOVERY (data/discovery.py)
    │  - Fetch current prices for all symbols
-   │  - Filter by max_share_price ($120 default)
+   │  - Filter by max_share_price (optional)
    │  - Check options availability
    │
    ▼
 4. DATA FETCHING (data/fetcher.py)
+   │  - Rate limiting (token bucket, 5 req/sec)
+   │  - Retry with exponential backoff (3 retries)
    │  - Fetch options chains from yfinance
    │  - Create OptionsChain objects
+   │  - Cache market data (risk-free rate, dividends)
    │
    ▼
 5. GREEKS CALCULATION (analysis/greeks.py)
-   │  - Calculate delta, gamma, theta, vega
+   │  - Black-Scholes for European Greeks
+   │  - Bjerksund-Stensland for American options
+   │  - Live risk-free rate from 10Y Treasury
+   │  - Dividend yield support
+   │  - Higher-order Greeks (Vanna, Charm, Vomma)
    │  - Enrich OptionContract objects
    │
    ▼
@@ -84,19 +108,26 @@ DATA FLOW
    │  - Detect anomalies
    │
    ▼
-7. STRATEGY EXECUTION (strategies/*.py)
+7. RISK ASSESSMENT (analysis/risk_metrics.py)
+   │  - Check earnings calendar
+   │  - Calculate CVaR (Expected Shortfall)
+   │  - Calculate liquidity scores
+   │
+   ▼
+8. STRATEGY EXECUTION (strategies/*.py)
    │  - Each strategy finds candidates
    │  - Calculate trade metrics
    │  - Filter by criteria
-   │  - Score candidates
+   │  - Enrich with risk metrics
+   │  - Score with EnhancedScorer
    │
    ▼
-8. POSITION SIZING (analysis/position_sizer.py)
+9. POSITION SIZING (analysis/position_sizer.py)
    │  - Filter by capital constraints
    │  - Calculate max contracts
    │
    ▼
-9. OUTPUT (ui/display.py)
+10. OUTPUT (ui/display.py)
       - Format tables
       - Display results
 
@@ -248,30 +279,84 @@ ADDING A NEW PROVIDER:
 GREEKS CALCULATION
 ================================================================================
 
-Uses py_vollib for Black-Scholes Greeks.
+Uses py_vollib for Black-Scholes Greeks with American options support.
 
 GreeksCalculator (analysis/greeks.py):
   - calculate_greeks(contract) -> Updates contract in place
   - calculate_greeks_batch(contracts) -> Vectorized for performance
   - enrich_chain(chain) -> Calculate Greeks for all contracts
 
+PRICING MODELS:
+  - Black-Scholes: European-style options (standard Greeks)
+  - Bjerksund-Stensland (2002): American options pricing
+    - Handles early exercise premium for calls/puts
+    - Uses put-call transformation for American puts
+    - Includes dividend yield support
+
+LIVE MARKET DATA:
+  - Risk-free rate: Fetched from 10Y Treasury (^TNX)
+  - Dividend yields: Per-symbol from yfinance
+  - 4-hour cache TTL to reduce API calls
+
+HIGHER-ORDER GREEKS:
+  - Vanna: d(Delta)/d(Vol) - important for volatility traders
+  - Charm: d(Delta)/d(Time) - delta decay
+  - Vomma: d(Vega)/d(Vol) - vega convexity
+
 Supports py_vollib_vectorized for faster batch calculations if installed.
 
 
 ================================================================================
-SCORING SYSTEM
+SCORING SYSTEM (v2.0)
 ================================================================================
 
-Candidates are scored 0-100 for ranking. Default scoring in BaseStrategy:
+The enhanced scoring system uses a composite approach with risk adjustments.
 
-  Probability of profit:    0-30 points (higher prob = more points)
-  Return on risk:          0-25 points
-  Weekly return:           0-20 points
-  IV rank (for credits):   0-10 points (higher IV = more points)
-  Liquidity score:         0-10 points
-  Theta (for credits):     0-5 points (positive theta = more points)
+BASE SCORE COMPONENTS (0-100):
 
-Override score_candidate() in your strategy for custom scoring.
+  Weekly Return (25%):
+    - Higher projected return = higher score
+    - Target: 1-3% weekly
+    - Capped scaling at 5%
+
+  Probability of Profit (25%):
+    - Higher POP = higher score
+    - 70% is minimum target
+    - 90%+ is excellent
+
+  Liquidity Score (20%):
+    - Composite of spread, OI, volume
+    - See RISK_METRICS.txt for details
+
+  IV Rank (15%):
+    - Higher IV = better for premium selling
+    - Inverted for debit strategies
+
+  Theta Efficiency (15%):
+    - Daily theta as % of max loss
+    - 0.5% daily theta = excellent
+
+RISK MULTIPLIERS (applied after base score):
+
+  Earnings Penalty:
+    - 0.5× if earnings fall within trade window
+    - 0.7× if earnings within 3 days of expiration
+
+  Market Regime Factor:
+    - 0.7× if market is in stressed regime
+    - 0.9× if low volatility regime
+
+  CVaR Penalty:
+    - 0.7-1.0× graduated penalty for CVaR > 5% daily
+    - Higher tail risk = lower multiplier
+
+SCORING CLASSES:
+  - EnhancedScorer (strategies/base.py): Main scoring logic
+  - ScoringContext (strategies/base.py): Context data for scoring
+  - LiquidityCalculator (strategies/base.py): Liquidity scoring
+
+LEGACY SCORING:
+  For backwards compatibility, legacy_score_candidate() still available.
 
 
 ================================================================================
@@ -352,9 +437,75 @@ REQUIRED:
   scipy           - Interpolation for vol surface
   py_vollib       - Black-Scholes Greeks
   rich            - Terminal formatting
-  pydantic        - Data validation
+  requests        - HTTP requests
+  lxml            - HTML parsing for Wikipedia
 
 OPTIONAL:
   py_vollib_vectorized - Faster vectorized Greeks
   numba           - JIT compilation for speed
   plotly          - Visualization (not currently used)
+  transformers    - FinBERT sentiment analysis
+  torch           - PyTorch for sentiment/QML
+  pennylane       - Quantum ML scoring
+  pennylane-lightning - Fast QML simulation
+
+
+================================================================================
+RELIABILITY INFRASTRUCTURE (v2.0)
+================================================================================
+
+RATE LIMITING (data/fetcher.py):
+  RateLimiter class using token bucket algorithm:
+  - 5 requests per second default
+  - Burst size of 10 tokens
+  - Thread-safe with locking
+  - Prevents HTTP 429 errors on large scans
+
+RETRY LOGIC (data/fetcher.py):
+  @with_retry decorator with exponential backoff:
+  - 3 retries by default
+  - Base delay: 1 second
+  - Max delay: 30 seconds
+  - Jitter to prevent thundering herd
+  - Retries on: ConnectionError, Timeout, 5xx errors
+
+MARKET DATA CACHE (data/fetcher.py):
+  MarketDataCache singleton:
+  - Fetches ^TNX for risk-free rate
+  - Fetches dividend yields per symbol
+  - 4-hour cache TTL
+  - Thread-safe singleton pattern
+
+DATA VALIDATION (data/fetcher.py):
+  Multiple validation layers:
+  1. Strike price sanity (30%-300% of current price)
+  2. Options chain consistency
+  3. ATM premium reasonableness
+  4. Data freshness warnings
+
+
+================================================================================
+RISK METRICS SYSTEM (v2.0)
+================================================================================
+
+See docs/RISK_METRICS.txt for complete documentation.
+
+Key classes in analysis/risk_metrics.py:
+
+  EarningsCalendar:
+    - Fetches earnings dates from yfinance
+    - Risk levels: "low", "elevated", "high"
+    - Flags trades with earnings in window
+
+  CVaRCalculator:
+    - Expected Shortfall at 95% and 99% confidence
+    - Uses 252-day historical returns
+    - Better tail risk measure than VaR
+
+  LiquidityScorer:
+    - Weighted composite score (0-100)
+    - 40% spread + 35% OI + 25% volume
+
+  RiskAssessor:
+    - Combines all risk metrics
+    - Creates comprehensive RiskMetrics objects

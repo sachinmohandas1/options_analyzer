@@ -14,6 +14,18 @@ A quantitative tool for scanning options chains across index ETFs and identifyin
 - **Sentiment Analysis**: News-based risk filtering with FinBERT
 - **Quantum ML Scoring**: VQC-enhanced trade selection trained on backtest outcomes
 
+### Reliability Features (v2.0)
+- **Retry Logic**: Exponential backoff with 3 retries for API calls
+- **Rate Limiting**: Token bucket rate limiter (5 req/sec) to prevent HTTP 429 errors
+- **Live Market Data**: Fetches real-time risk-free rate (10Y Treasury) and dividend yields
+- **American Options Pricing**: Bjerksund-Stensland model for accurate American options valuation
+
+### Risk Assessment (v2.0)
+- **Earnings Calendar**: Automatic detection of earnings within trade window
+- **CVaR Risk Metric**: Conditional Value at Risk (Expected Shortfall) at 95% and 99% confidence
+- **Enhanced Liquidity Score**: Weighted composite of spread (40%), open interest (35%), and volume (25%)
+- **IV Rank/Percentile**: 52-week IV ranking to identify high-IV selling opportunities
+
 ## Installation
 
 ```bash
@@ -256,6 +268,41 @@ python main.py --refresh-iv -s SPY QQQ IWM
 
 For detailed documentation, see [docs/SYNTHETIC_CHAINS.txt](docs/SYNTHETIC_CHAINS.txt).
 
+## Enhanced Scoring System (v2.0)
+
+Trades are now scored using a sophisticated multi-factor system with risk adjustments:
+
+### Base Score Components (0-100)
+
+| Factor | Weight | Description |
+|--------|--------|-------------|
+| Weekly Return | 25% | Higher projected weekly return = higher score |
+| Probability of Profit | 25% | Higher POP = higher score (70%+ target) |
+| Liquidity | 20% | Composite of spread, OI, volume |
+| IV Rank | 15% | Higher IV = better for selling premium |
+| Theta Efficiency | 15% | Daily theta as % of max loss |
+
+### Risk Multipliers
+
+| Factor | Multiplier | Trigger |
+|--------|------------|---------|
+| Earnings in window | 0.5× | Earnings date falls before expiration |
+| Near earnings | 0.7× | Earnings within 3 days |
+| Stressed regime | 0.7× | Market in high-volatility regime |
+| High CVaR | 0.7-1.0× | CVaR > 5% daily (graduated) |
+
+### Liquidity Score Breakdown
+
+```
+Liquidity = (Spread Score × 40%) + (OI Score × 35%) + (Volume Score × 25%)
+
+Spread Score: 100 - (spread_pct × 2000)  → 5% spread = 0, 0% = 100
+OI Score: min(100, OI / 1000 × 100)      → 1000+ OI = 100
+Volume Score: min(100, volume / 500 × 100) → 500+ volume = 100
+```
+
+For detailed documentation, see [docs/RISK_METRICS.txt](docs/RISK_METRICS.txt).
+
 ## Architecture
 
 ```
@@ -264,17 +311,20 @@ options_analyzer/
 │   ├── config.py      # Configuration management
 │   └── models.py      # Data models
 ├── data/
-│   ├── fetcher.py     # Options chain data fetching
-│   └── synthetic_chain.py  # After-hours synthetic pricing
+│   ├── fetcher.py     # Options chain fetching (with retry/rate limiting)
+│   ├── discovery.py   # Symbol discovery and filtering
+│   ├── synthetic_chain.py  # After-hours synthetic pricing
+│   └── news_fetcher.py     # News data fetching
 ├── analysis/
-│   ├── greeks.py      # Greeks calculations
+│   ├── greeks.py      # Greeks (Black-Scholes + Bjerksund-Stensland)
 │   ├── volatility_surface.py  # Vol surface analysis
 │   ├── position_sizer.py      # Position sizing
+│   ├── risk_metrics.py        # CVaR, earnings calendar, liquidity scoring (NEW)
 │   ├── sentiment.py           # News sentiment analysis (FinBERT)
 │   ├── quantum_scorer.py      # VQC-based trade scoring
 │   └── qml_integration.py     # Streamlined QML CLI integration
 ├── strategies/
-│   ├── base.py        # Base strategy class
+│   ├── base.py        # Base strategy + enhanced scoring system
 │   ├── secured_premium.py  # CSP, covered calls
 │   └── credit_spreads.py   # Spreads, iron condors
 ├── backtesting/

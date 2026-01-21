@@ -1,20 +1,274 @@
 """
 Data fetching layer for options chains.
 Uses yfinance as the primary data source with abstraction for future providers.
+
+Reliability features:
+- Exponential backoff retry logic
+- Rate limiting to avoid HTTP 429 errors
+- Live risk-free rate and dividend yield fetching
 """
 
 import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, date, timedelta
-from typing import List, Dict, Optional, Tuple, Protocol, Any
+from typing import List, Dict, Optional, Tuple, Protocol, Any, Callable
 from abc import ABC, abstractmethod
 import logging
+import time
+import threading
+import functools
 
 from core.models import OptionContract, OptionsChain, OptionType
 from core.config import AnalyzerConfig
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Retry and Rate Limiting Infrastructure
+# ============================================================================
+
+class RateLimiter:
+    """
+    Token bucket rate limiter for API calls.
+
+    Prevents HTTP 429 errors during large scans by limiting request rate.
+    """
+
+    def __init__(self, requests_per_second: float = 5.0, burst_size: int = 10):
+        self.rate = requests_per_second
+        self.burst_size = burst_size
+        self.tokens = burst_size
+        self.last_update = time.monotonic()
+        self._lock = threading.Lock()
+
+    def acquire(self, timeout: float = 30.0) -> bool:
+        """
+        Acquire a token, blocking if necessary.
+
+        Returns True if token acquired, False if timeout.
+        """
+        deadline = time.monotonic() + timeout
+
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                # Replenish tokens based on elapsed time
+                elapsed = now - self.last_update
+                self.tokens = min(self.burst_size, self.tokens + elapsed * self.rate)
+                self.last_update = now
+
+                if self.tokens >= 1:
+                    self.tokens -= 1
+                    return True
+
+            # Calculate wait time for next token
+            wait_time = (1 - self.tokens) / self.rate
+            if time.monotonic() + wait_time > deadline:
+                return False
+
+            time.sleep(min(wait_time, 0.1))  # Sleep in small increments
+
+    def reset(self):
+        """Reset the rate limiter to full capacity."""
+        with self._lock:
+            self.tokens = self.burst_size
+            self.last_update = time.monotonic()
+
+
+# Global rate limiter for yfinance API calls
+_api_rate_limiter = RateLimiter(requests_per_second=5.0, burst_size=10)
+
+
+def with_retry(
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    exponential_base: float = 2.0,
+    retryable_exceptions: Tuple = (Exception,)
+):
+    """
+    Decorator for exponential backoff retry logic.
+
+    Args:
+        max_retries: Maximum number of retry attempts
+        base_delay: Initial delay between retries (seconds)
+        max_delay: Maximum delay between retries (seconds)
+        exponential_base: Multiplier for exponential backoff
+        retryable_exceptions: Tuple of exceptions to retry on
+    """
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+
+            for attempt in range(max_retries + 1):
+                try:
+                    # Acquire rate limit token
+                    if not _api_rate_limiter.acquire(timeout=60.0):
+                        logger.warning("Rate limit timeout, proceeding anyway")
+
+                    return func(*args, **kwargs)
+
+                except retryable_exceptions as e:
+                    last_exception = e
+                    if attempt < max_retries:
+                        delay = min(max_delay, base_delay * (exponential_base ** attempt))
+                        # Add jitter to prevent thundering herd
+                        jitter = delay * 0.1 * (2 * np.random.random() - 1)
+                        sleep_time = delay + jitter
+
+                        logger.warning(
+                            f"Attempt {attempt + 1}/{max_retries + 1} failed: {e}. "
+                            f"Retrying in {sleep_time:.1f}s..."
+                        )
+                        time.sleep(sleep_time)
+                    else:
+                        logger.error(
+                            f"All {max_retries + 1} attempts failed for {func.__name__}: {e}"
+                        )
+
+            raise last_exception
+
+        return wrapper
+    return decorator
+
+
+# ============================================================================
+# Market Data Fetchers (Risk-Free Rate, Dividends)
+# ============================================================================
+
+class MarketDataCache:
+    """
+    Cache for market data (risk-free rate, dividend yields).
+
+    Fetches from reliable sources and caches to avoid repeated API calls.
+    """
+
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+
+        self._risk_free_rate: Optional[float] = None
+        self._risk_free_rate_time: Optional[datetime] = None
+        self._dividend_yields: Dict[str, float] = {}
+        self._dividend_yields_time: Dict[str, datetime] = {}
+        self._cache_ttl = timedelta(hours=4)
+        self._initialized = True
+
+    @with_retry(max_retries=2, base_delay=1.0)
+    def get_risk_free_rate(self, use_cache: bool = True) -> float:
+        """
+        Fetch current risk-free rate (10-Year Treasury yield).
+
+        Falls back to 5% if fetch fails.
+        """
+        now = datetime.now()
+
+        # Check cache
+        if (use_cache and
+            self._risk_free_rate is not None and
+            self._risk_free_rate_time is not None and
+            now - self._risk_free_rate_time < self._cache_ttl):
+            return self._risk_free_rate
+
+        try:
+            # Fetch 10-Year Treasury yield using ^TNX (CBOE 10-Year Treasury)
+            ticker = yf.Ticker("^TNX")
+            hist = ticker.history(period='5d')
+
+            if not hist.empty:
+                # TNX is quoted in percentage points (e.g., 4.5 = 4.5%)
+                rate = float(hist['Close'].iloc[-1]) / 100
+                self._risk_free_rate = rate
+                self._risk_free_rate_time = now
+                logger.info(f"Fetched risk-free rate: {rate:.4f} ({rate*100:.2f}%)")
+                return rate
+
+        except Exception as e:
+            logger.warning(f"Could not fetch risk-free rate: {e}")
+
+        # Fallback to default
+        return 0.05
+
+    @with_retry(max_retries=2, base_delay=0.5)
+    def get_dividend_yield(self, symbol: str, use_cache: bool = True) -> float:
+        """
+        Fetch dividend yield for a symbol.
+
+        Returns 0.0 if not available or symbol doesn't pay dividends.
+        """
+        now = datetime.now()
+
+        # Check cache
+        if (use_cache and
+            symbol in self._dividend_yields and
+            symbol in self._dividend_yields_time and
+            now - self._dividend_yields_time[symbol] < self._cache_ttl):
+            return self._dividend_yields[symbol]
+
+        try:
+            ticker = yf.Ticker(symbol)
+
+            # Try multiple methods to get dividend yield
+            div_yield = None
+
+            # Method 1: fast_info
+            try:
+                fast = ticker.fast_info
+                if hasattr(fast, 'dividend_yield') and fast.dividend_yield:
+                    div_yield = float(fast.dividend_yield)
+            except Exception:
+                pass
+
+            # Method 2: info dict
+            if div_yield is None:
+                try:
+                    info = ticker.info
+                    if 'dividendYield' in info and info['dividendYield']:
+                        div_yield = float(info['dividendYield'])
+                    elif 'trailingAnnualDividendYield' in info and info['trailingAnnualDividendYield']:
+                        div_yield = float(info['trailingAnnualDividendYield'])
+                except Exception:
+                    pass
+
+            if div_yield is not None and div_yield > 0:
+                self._dividend_yields[symbol] = div_yield
+                self._dividend_yields_time[symbol] = now
+                logger.debug(f"{symbol}: Dividend yield {div_yield:.4f} ({div_yield*100:.2f}%)")
+                return div_yield
+
+        except Exception as e:
+            logger.debug(f"Could not fetch dividend yield for {symbol}: {e}")
+
+        # No dividend or couldn't fetch
+        self._dividend_yields[symbol] = 0.0
+        self._dividend_yields_time[symbol] = now
+        return 0.0
+
+    def batch_fetch_dividends(self, symbols: List[str]) -> Dict[str, float]:
+        """Fetch dividend yields for multiple symbols."""
+        results = {}
+        for symbol in symbols:
+            results[symbol] = self.get_dividend_yield(symbol)
+        return results
+
+
+# Singleton accessor
+def get_market_data_cache() -> MarketDataCache:
+    return MarketDataCache()
 
 
 class DataProvider(Protocol):
@@ -252,8 +506,9 @@ class YFinanceProvider:
 
         return True
 
+    @with_retry(max_retries=3, base_delay=1.0, max_delay=15.0)
     def get_options_chain(self, symbol: str) -> Optional[OptionsChain]:
-        """Fetch complete options chain for a symbol."""
+        """Fetch complete options chain for a symbol with retry logic."""
         try:
             ticker = yf.Ticker(symbol)
 
@@ -385,8 +640,9 @@ class YFinanceProvider:
 
         return contracts
 
+    @with_retry(max_retries=2, base_delay=0.5, max_delay=5.0)
     def get_historical_volatility(self, symbol: str, days: int = 30) -> Optional[float]:
-        """Calculate historical volatility from price data."""
+        """Calculate historical volatility from price data with retry logic."""
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period=f'{days + 10}d')  # Extra days for buffer

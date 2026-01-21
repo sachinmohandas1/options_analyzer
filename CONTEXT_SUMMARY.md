@@ -34,16 +34,23 @@ options_analyzer/
 │   ├── config.py           # All configuration (TradeCriteria, CapitalConfig, etc.)
 │   └── models.py           # Data models (OptionContract, TradeCandidate, etc.)
 ├── data/
-│   ├── fetcher.py          # yfinance data fetching with validation
-│   └── discovery.py        # Symbol discovery (S&P 500, Nasdaq 100, ETFs)
+│   ├── fetcher.py          # yfinance data fetching with retry/rate limiting
+│   ├── discovery.py        # Symbol discovery (S&P 500, Nasdaq 100, ETFs)
+│   ├── synthetic_chain.py  # After-hours synthetic pricing
+│   └── news_fetcher.py     # News data fetching
 ├── analysis/
-│   ├── greeks.py           # Black-Scholes Greeks calculation
+│   ├── greeks.py           # Black-Scholes + Bjerksund-Stensland (American options)
 │   ├── volatility_surface.py # IV surface analysis, skew detection
-│   └── position_sizer.py   # Position sizing logic
+│   ├── position_sizer.py   # Position sizing logic
+│   ├── risk_metrics.py     # CVaR, earnings calendar, liquidity scoring (NEW)
+│   ├── sentiment.py        # News sentiment analysis (FinBERT)
+│   ├── quantum_scorer.py   # VQC-based trade scoring
+│   └── qml_integration.py  # QML CLI integration
 ├── strategies/
-│   ├── base.py             # BaseStrategy abstract class
+│   ├── base.py             # BaseStrategy + EnhancedScorer (NEW)
 │   ├── secured_premium.py  # CSP and Covered Call strategies
-│   └── credit_spreads.py   # Put/Call credit spreads (+ unused IronCondor)
+│   └── credit_spreads.py   # Put/Call credit spreads, Iron Condors
+├── backtesting/            # Historical backtesting
 ├── ui/
 │   └── display.py          # Terminal output formatting
 └── docs/                   # Documentation files
@@ -80,34 +87,89 @@ Where `return_on_collateral`:
 - **CSP:** premium_received / (strike × 100)
 - **Credit Spread:** premium_received / max_loss
 
+### Data Fetching Reliability (fetcher.py) - NEW
+
+1. **Retry Logic** (fetcher.py:84-135):
+   - Exponential backoff with 3 retries
+   - Base delay 1s, max delay 30s
+   - Jitter to prevent thundering herd
+
+2. **Rate Limiting** (fetcher.py:32-77):
+   - Token bucket algorithm
+   - 5 requests/second, burst of 10
+   - Prevents HTTP 429 errors on large scans
+
+3. **Live Market Data** (fetcher.py:142-271):
+   - Risk-free rate from 10Y Treasury (^TNX)
+   - Dividend yields per symbol
+   - 4-hour cache TTL
+
 ### Data Validation (fetcher.py)
 
 The system has multiple layers to catch stale/invalid data:
 
-1. **Price Fetching Priority** (fetcher.py:43-95, discovery.py:136-193):
+1. **Price Fetching Priority**:
    - Intraday 1-minute data (most current)
    - fast_info
    - info dict
    - 5-day history (fallback)
 
-2. **Strike Price Sanity Check** (fetcher.py:97-130):
+2. **Strike Price Sanity Check**:
    - Strikes must be 30%-300% of current price
    - Filters out pre-split stale data
 
-3. **Options Chain Consistency Validation** (fetcher.py:168-253):
+3. **Options Chain Consistency Validation**:
    - Must have strikes within 20% of current price
    - ATM premium can't exceed 30% of stock price
    - ITM options must have at least 50% of intrinsic value
-   - Catches cases like SPXS where stock price updated but options chain is stale
 
-4. **Data Freshness Check** (fetcher.py:132-166):
+4. **Data Freshness Check**:
    - Warns if last trade > 1 day ago (weekdays) or > 3 days (weekends)
 
-### Greeks Calculation (greeks.py)
+### Greeks Calculation (greeks.py) - ENHANCED
 
-- Uses py_vollib Black-Scholes model
-- Vectorized mode DISABLED (py_vollib_vectorized API incompatibility)
-- Sequential calculation works fine for typical volumes
+- **Black-Scholes** for European-style Greeks
+- **Bjerksund-Stensland (2002)** for American options pricing (NEW)
+- **Live risk-free rate** from 10Y Treasury (NEW)
+- **Dividend yield support** for accurate pricing (NEW)
+- **Higher-order Greeks**: Vanna, Charm, Vomma available (NEW)
+- Vectorized mode DISABLED (API incompatibility)
+
+### Risk Metrics (risk_metrics.py) - NEW
+
+1. **Earnings Calendar**:
+   - Fetches earnings dates from yfinance
+   - Flags trades with earnings in window
+   - Risk levels: "low", "elevated", "high"
+
+2. **CVaR (Conditional Value at Risk)**:
+   - Expected Shortfall at 95% and 99% confidence
+   - Uses 252-day historical returns
+   - Better tail risk measure than VaR
+
+3. **Enhanced Liquidity Score**:
+   - Spread score (40%): 5% spread = 0, 0% = 100
+   - OI score (35%): 1000+ OI = 100
+   - Volume score (25%): 500+ volume = 100
+
+### Enhanced Scoring System (base.py) - NEW
+
+**Base Score (0-100):**
+```
+Score = (
+    weekly_return_score × 25% +
+    prob_profit_score × 25% +
+    liquidity_score × 20% +
+    iv_rank_score × 15% +
+    theta_efficiency × 15%
+)
+```
+
+**Risk Multipliers:**
+- Earnings in window: 0.5×
+- Earnings within 3 days: 0.7×
+- Stressed market regime: 0.7×
+- High CVaR (>5%): 0.7-1.0× (graduated)
 
 ### Symbol Discovery (discovery.py)
 
@@ -121,10 +183,10 @@ Wikipedia fetching requires User-Agent header to avoid 403 errors.
 
 1. **Greeks vectorized calculation warning** - Disabled vectorized mode, using sequential
 2. **HTTP 403 from Wikipedia** - Added User-Agent header to requests
-3. **Stale options data (e.g., SPXS post-split)** - Added comprehensive validation:
-   - Strike proximity check
-   - ATM premium sanity check
-   - ITM intrinsic value check
+3. **Stale options data (e.g., SPXS post-split)** - Added comprehensive validation
+4. **HTTP 429 rate limiting** - Added token bucket rate limiter (NEW)
+5. **API failures** - Added exponential backoff retry logic (NEW)
+6. **European vs American options** - Added Bjerksund-Stensland model (NEW)
 
 ## Configuration Defaults (core/config.py)
 
@@ -160,17 +222,25 @@ UnderlyingConfig:
 - requests
 - lxml
 
-## Potential Future Enhancements
+## Recent Enhancements (v2.0)
 
-1. **Enable Covered Calls** - Strategy code exists, just needs CLI integration
-2. **Real-time data** - yfinance is delayed; could integrate paid providers (IBKR, Polygon, etc.)
-3. **Backtesting module** - Test strategies on historical data
-4. **Portfolio tracking** - Track open positions and P&L
-5. **Alerts/notifications** - When opportunities matching criteria appear
-6. **Web UI** - Flask/FastAPI dashboard instead of CLI
-7. **More strategies** - Strangles, straddles (if risk tolerance changes)
-8. **Earnings calendar integration** - Avoid/target earnings plays
-9. **Sector rotation** - Weight opportunities by sector performance
+### Completed
+- ✅ Exponential backoff retry logic (3 retries, 1-30s delays)
+- ✅ Token bucket rate limiting (5 req/sec)
+- ✅ Live risk-free rate from Treasury
+- ✅ Dividend yield fetching per symbol
+- ✅ Bjerksund-Stensland American options pricing
+- ✅ Earnings calendar integration
+- ✅ CVaR risk metric (Expected Shortfall)
+- ✅ Enhanced liquidity scoring (40/35/25 weighted)
+- ✅ IV Rank/Percentile calculation
+- ✅ New composite scoring system with risk multipliers
+
+### Future Enhancements
+1. **Market Regime Detection** - HMM-based regime classification
+2. **Portfolio Correlation** - Sector exposure limits
+3. **ORATS Integration** - Professional-grade IV analytics
+4. **Backtest Validation** - Empirical weight optimization
 
 ## User Preferences
 
