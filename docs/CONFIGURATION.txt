@@ -16,7 +16,7 @@ TRADE CRITERIA (TradeCriteria class)
 These control which trades pass the filter:
 
 PROFITABILITY:
-  min_weekly_return_pct = 1.0    # Minimum 1% return per week target
+  min_trade_return_pct = 1.0    # Minimum 1% return per trade
   min_annualized_return_pct = 52.0   # For reference (52 weeks x 1%)
 
 PROBABILITY:
@@ -169,11 +169,7 @@ OTHER SETTINGS
 RELIABILITY SETTINGS (v2.0)
 ================================================================================
 
-Rate limiting and retry settings are in data/fetcher.py:
-
-RATE LIMITING:
-  requests_per_second = 5.0   # Token bucket rate
-  burst_size = 10             # Maximum burst capacity
+Retry settings are in data/fetcher.py:
 
 RETRY LOGIC:
   max_retries = 3             # Number of retry attempts
@@ -244,7 +240,7 @@ Most criteria can be set via CLI without editing config.py:
 
   --capital 15000           # Override total_capital
   --prob 0.75               # Override min_prob_profit
-  --return 1.5              # Override min_weekly_return_pct
+  --return 1.5              # Override min_trade_return_pct
   --max-dte 3               # Override max_dte
   --min-dte 2               # Override min_dte
   --max-delta 0.25          # Override max_delta

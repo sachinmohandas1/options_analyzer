@@ -507,7 +507,7 @@ class DiversifiedScalingBacktester:
         strategies = {}
 
         criteria = TradeCriteria(
-            min_weekly_return_pct=min_return_pct,
+            min_trade_return_pct=min_return_pct,
             min_prob_profit=self.config.target_prob_profit,
             max_dte=self.config.max_dte,
             min_dte=1,

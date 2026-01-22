@@ -16,7 +16,6 @@ A quantitative tool for scanning options chains across index ETFs and identifyin
 
 ### Reliability Features (v2.0)
 - **Retry Logic**: Exponential backoff with 3 retries for API calls
-- **Rate Limiting**: Token bucket rate limiter (5 req/sec) to prevent HTTP 429 errors
 - **Live Market Data**: Fetches real-time risk-free rate (10Y Treasury) and dividend yields
 - **American Options Pricing**: Bjerksund-Stensland model for accurate American options valuation
 
@@ -64,7 +63,7 @@ python main.py --json > results.json
 | `-s, --symbols` | Major ETFs | Symbols to analyze |
 | `--capital` | 13000 | Total capital available |
 | `--prob` | 0.70 | Minimum probability of profit |
-| `--return` | 1.0 | Minimum weekly return % |
+| `--return` | 1.0 | Minimum trade return % |
 | `--max-dte` | 5 | Maximum days to expiration |
 | `--min-dte` | 1 | Minimum days to expiration |
 | `--max-delta` | 0.30 | Maximum delta for short options |
@@ -311,7 +310,7 @@ options_analyzer/
 │   ├── config.py      # Configuration management
 │   └── models.py      # Data models
 ├── data/
-│   ├── fetcher.py     # Options chain fetching (with retry/rate limiting)
+│   ├── fetcher.py     # Options chain fetching (with retry logic)
 │   ├── discovery.py   # Symbol discovery and filtering
 │   ├── synthetic_chain.py  # After-hours synthetic pricing
 │   └── news_fetcher.py     # News data fetching
@@ -389,7 +388,7 @@ from analyzer import create_analyzer
 analyzer = create_analyzer(
     capital=20000,
     min_prob_profit=0.75,
-    min_weekly_return=1.5,
+    min_trade_return=1.5,
     max_dte=3,
     symbols=['SPY', 'QQQ']
 )

@@ -23,7 +23,7 @@ options_analyzer/
 │
 ├── data/                  # Data fetching
 │   ├── __init__.py
-│   ├── fetcher.py         # yfinance data provider (with retry/rate limiting)
+│   ├── fetcher.py         # yfinance data provider (with retry logic)
 │   ├── discovery.py       # Symbol discovery and price filtering
 │   ├── synthetic_chain.py # After-hours synthetic options pricing
 │   └── news_fetcher.py    # News data fetching for sentiment
@@ -86,7 +86,6 @@ DATA FLOW
    │
    ▼
 4. DATA FETCHING (data/fetcher.py)
-   │  - Rate limiting (token bucket, 5 req/sec)
    │  - Retry with exponential backoff (3 retries)
    │  - Fetch options chains from yfinance
    │  - Create OptionsChain objects
@@ -453,13 +452,6 @@ OPTIONAL:
 ================================================================================
 RELIABILITY INFRASTRUCTURE (v2.0)
 ================================================================================
-
-RATE LIMITING (data/fetcher.py):
-  RateLimiter class using token bucket algorithm:
-  - 5 requests per second default
-  - Burst size of 10 tokens
-  - Thread-safe with locking
-  - Prevents HTTP 429 errors on large scans
 
 RETRY LOGIC (data/fetcher.py):
   @with_retry decorator with exponential backoff:

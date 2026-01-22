@@ -54,7 +54,7 @@ Examples:
   python main.py                         # Run with defaults
   python main.py -s SPY QQQ IWM          # Analyze specific symbols
   python main.py --capital 25000         # Set capital to $25,000
-  python main.py --prob 0.75 --return 1.5 # 75% prob, 1.5% weekly return
+  python main.py --prob 0.75 --return 1.5 # 75% prob, 1.5% trade return
   python main.py --max-dte 3             # Only look at 3 DTE or less
   python main.py --no-vol                # Skip volatility analysis
   python main.py -v                      # Verbose output
@@ -86,7 +86,7 @@ Examples:
         type=float,
         default=1.0,
         dest='min_return',
-        help='Minimum weekly return %% (default: 1.0 = 1%%)'
+        help='Minimum trade return %% (default: 1.0 = 1%%)'
     )
 
     parser.add_argument(
@@ -392,7 +392,7 @@ def run_backtest(args):
     # Build config
     trade_criteria = TradeCriteria(
         min_prob_profit=args.prob,
-        min_weekly_return_pct=args.min_return,
+        min_trade_return_pct=args.min_return,
         max_dte=args.max_dte,
         min_dte=args.min_dte,
         max_delta=args.max_delta,
@@ -579,7 +579,7 @@ def main():
     config = AnalyzerConfig()
     config.capital.total_capital = args.capital
     config.trade_criteria.min_prob_profit = args.prob
-    config.trade_criteria.min_weekly_return_pct = args.min_return
+    config.trade_criteria.min_trade_return_pct = args.min_return
     config.trade_criteria.max_dte = args.max_dte
     config.trade_criteria.min_dte = args.min_dte
     config.trade_criteria.max_delta = args.max_delta
@@ -626,11 +626,13 @@ def main():
 
     # Determine synthetic mode
     use_synthetic = args.synthetic or args.synthetic_only
+    synthetic_only = args.synthetic_only
 
     # Create analyzer with synthetic mode
     analyzer = OptionsAnalyzer(
         config,
         use_synthetic=use_synthetic,
+        synthetic_only=synthetic_only,
         sentiment_signals=sentiment_signals
     )
 
@@ -677,7 +679,7 @@ def main():
         display_header()
         console.print(f"[cyan]Capital:[/cyan] ${config.capital.total_capital:,.2f}")
         console.print(f"[cyan]Min Prob Profit:[/cyan] {config.trade_criteria.min_prob_profit:.0%}")
-        console.print(f"[cyan]Min Weekly Return:[/cyan] {config.trade_criteria.min_weekly_return_pct:.1f}%")
+        console.print(f"[cyan]Min Trade Return:[/cyan] {config.trade_criteria.min_trade_return_pct:.1f}%")
         console.print(f"[cyan]Max DTE:[/cyan] {config.trade_criteria.max_dte}")
         if args.max_price is not None:
             console.print(f"[cyan]Max Share Price:[/cyan] ${config.underlyings.max_share_price:.0f}")

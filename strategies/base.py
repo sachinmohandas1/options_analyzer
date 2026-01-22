@@ -392,8 +392,8 @@ class BaseStrategy(ABC):
         filtered = []
 
         for c in candidates:
-            # Weekly return check
-            if c.weekly_return < self.criteria.min_weekly_return_pct / 100:
+            # Trade return check
+            if c.trade_return_pct < self.criteria.min_trade_return_pct:
                 continue
 
             # Probability check

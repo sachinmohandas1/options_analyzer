@@ -78,8 +78,18 @@ class EarningsCalendar:
                     return None
 
         try:
-            ticker = yf.Ticker(symbol)
-            calendar = ticker.calendar
+            # Temporarily suppress yfinance ERROR logging for calendar fetch
+            # ETFs and some symbols don't have calendar data, which triggers
+            # HTTP 404 "No fundamentals data found" - this is expected, not an error
+            yf_logger = logging.getLogger('yfinance')
+            original_level = yf_logger.level
+            yf_logger.setLevel(logging.CRITICAL)
+
+            try:
+                ticker = yf.Ticker(symbol)
+                calendar = ticker.calendar
+            finally:
+                yf_logger.setLevel(original_level)
 
             if calendar is None or calendar.empty:
                 self._no_earnings_cache[symbol] = now
@@ -163,7 +173,7 @@ class EarningsCalendar:
         return "low", days_to_earnings
 
     def batch_fetch(self, symbols: List[str]) -> Dict[str, Optional[EarningsEvent]]:
-        """Fetch earnings for multiple symbols (with rate limiting)."""
+        """Fetch earnings for multiple symbols."""
         results = {}
         for symbol in symbols:
             results[symbol] = self.get_next_earnings(symbol)

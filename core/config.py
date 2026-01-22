@@ -20,7 +20,7 @@ class StrategyType(Enum):
 @dataclass
 class TradeCriteria:
     """Configurable criteria for filtering and scoring trades."""
-    min_weekly_return_pct: float = 1.0
+    min_trade_return_pct: float = 1.0
     min_annualized_return_pct: float = 52.0
     min_prob_profit: float = 0.70
     min_prob_otm: float = 0.70

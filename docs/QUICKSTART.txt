@@ -21,7 +21,7 @@ INSTALLATION
 
 BASIC USAGE
 -----------
-Run with default settings ($13k capital, 70% prob, 1% weekly return, 5 DTE):
+Run with default settings ($13k capital, 70% prob, 1% trade return, 5 DTE):
    python main.py
 
 Analyze specific symbols only:
@@ -43,7 +43,7 @@ Core Options:
   -s, --symbols      Symbols to analyze (space separated)
   --capital          Total capital available (default: 13000)
   --prob             Minimum probability of profit 0-1 (default: 0.70)
-  --return           Minimum weekly return % (default: 1.0)
+  --return           Minimum trade return % (default: 1.0)
   --max-dte          Maximum days to expiration (default: 5)
   --min-dte          Minimum days to expiration (default: 1)
   --max-delta        Maximum delta for short options (default: 0.30)
@@ -118,7 +118,6 @@ Risk Metrics:
   - Live 10-year Treasury rate for Greeks calculations
 
 Reliability:
-  - Token bucket rate limiting to avoid API throttling
   - Exponential backoff retry for transient failures
   - Singleton caching to avoid duplicate API calls
   - Pre-fetching of risk data for faster analysis
@@ -197,9 +196,8 @@ TROUBLESHOOTING
   - Try relaxing criteria: --prob 0.65 --return 0.8
   - Use --full-scan to search more symbols
 
-"Rate limited / timeout errors":
-  - Built-in rate limiting should handle most cases
-  - If persistent, wait a few minutes and retry
+"Timeout errors":
+  - Wait a few minutes and retry
   - Run fewer symbols at once
 
 "Missing Greeks / IV data":

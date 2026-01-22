@@ -34,7 +34,7 @@ options_analyzer/
 │   ├── config.py           # All configuration (TradeCriteria, CapitalConfig, etc.)
 │   └── models.py           # Data models (OptionContract, TradeCandidate, etc.)
 ├── data/
-│   ├── fetcher.py          # yfinance data fetching with retry/rate limiting
+│   ├── fetcher.py          # yfinance data fetching with retry logic
 │   ├── discovery.py        # Symbol discovery (S&P 500, Nasdaq 100, ETFs)
 │   ├── synthetic_chain.py  # After-hours synthetic pricing
 │   └── news_fetcher.py     # News data fetching
@@ -87,19 +87,14 @@ Where `return_on_collateral`:
 - **CSP:** premium_received / (strike × 100)
 - **Credit Spread:** premium_received / max_loss
 
-### Data Fetching Reliability (fetcher.py) - NEW
+### Data Fetching Reliability (fetcher.py)
 
-1. **Retry Logic** (fetcher.py:84-135):
+1. **Retry Logic**:
    - Exponential backoff with 3 retries
    - Base delay 1s, max delay 30s
    - Jitter to prevent thundering herd
 
-2. **Rate Limiting** (fetcher.py:32-77):
-   - Token bucket algorithm
-   - 5 requests/second, burst of 10
-   - Prevents HTTP 429 errors on large scans
-
-3. **Live Market Data** (fetcher.py:142-271):
+2. **Live Market Data**:
    - Risk-free rate from 10Y Treasury (^TNX)
    - Dividend yields per symbol
    - 4-hour cache TTL
@@ -184,15 +179,15 @@ Wikipedia fetching requires User-Agent header to avoid 403 errors.
 1. **Greeks vectorized calculation warning** - Disabled vectorized mode, using sequential
 2. **HTTP 403 from Wikipedia** - Added User-Agent header to requests
 3. **Stale options data (e.g., SPXS post-split)** - Added comprehensive validation
-4. **HTTP 429 rate limiting** - Added token bucket rate limiter (NEW)
-5. **API failures** - Added exponential backoff retry logic (NEW)
-6. **European vs American options** - Added Bjerksund-Stensland model (NEW)
+4. **API failures** - Added exponential backoff retry logic
+5. **European vs American options** - Added Bjerksund-Stensland model
+6. **HTTP 404 for ETF calendars** - Suppressed yfinance error logging for expected failures
 
 ## Configuration Defaults (core/config.py)
 
 ```python
 TradeCriteria:
-    min_weekly_return_pct: 1.0
+    min_trade_return_pct: 1.0
     min_prob_profit: 0.70
     max_dte: 5
     min_dte: 1
@@ -226,7 +221,6 @@ UnderlyingConfig:
 
 ### Completed
 - ✅ Exponential backoff retry logic (3 retries, 1-30s delays)
-- ✅ Token bucket rate limiting (5 req/sec)
 - ✅ Live risk-free rate from Treasury
 - ✅ Dividend yield fetching per symbol
 - ✅ Bjerksund-Stensland American options pricing

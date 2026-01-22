@@ -50,6 +50,7 @@ class OptionsAnalyzer:
         self,
         config: Optional[AnalyzerConfig] = None,
         use_synthetic: bool = False,
+        synthetic_only: bool = False,
         sentiment_signals: Optional[Dict] = None
     ):
         self.config = config or DEFAULT_CONFIG
@@ -57,7 +58,8 @@ class OptionsAnalyzer:
         # Initialize components
         self.data_fetcher = DataFetcher(
             self.config,
-            use_synthetic_fallback=use_synthetic,
+            use_synthetic_fallback=use_synthetic or synthetic_only,
+            synthetic_only=synthetic_only,
             sentiment_signals=sentiment_signals
         )
         self.symbol_discovery = SymbolDiscovery(self.config)
@@ -68,8 +70,9 @@ class OptionsAnalyzer:
         # Price cache from discovery
         self._symbol_prices: Dict[str, float] = {}
 
-        # Synthetic mode flag
-        self.use_synthetic = use_synthetic
+        # Synthetic mode flags
+        self.use_synthetic = use_synthetic or synthetic_only
+        self.synthetic_only = synthetic_only
 
         # Initialize strategies
         self.strategies: List[BaseStrategy] = []
@@ -78,10 +81,11 @@ class OptionsAnalyzer:
         # Results storage
         self.last_result: Optional[AnalysisResult] = None
 
-    def enable_synthetic_mode(self, enabled: bool = True, sentiment_signals: Optional[Dict] = None):
+    def enable_synthetic_mode(self, enabled: bool = True, synthetic_only: bool = False, sentiment_signals: Optional[Dict] = None):
         """Enable or disable synthetic chain generation."""
-        self.use_synthetic = enabled
-        self.data_fetcher.enable_synthetic_fallback(enabled)
+        self.use_synthetic = enabled or synthetic_only
+        self.synthetic_only = synthetic_only
+        self.data_fetcher.enable_synthetic_fallback(enabled, synthetic_only=synthetic_only)
         if sentiment_signals:
             self.data_fetcher.set_sentiment_signals(sentiment_signals)
 
@@ -335,7 +339,7 @@ class OptionsAnalyzer:
 def create_analyzer(
     capital: float = 13000,
     min_prob_profit: float = 0.70,
-    min_weekly_return: float = 1.0,
+    min_trade_return: float = 1.0,
     max_dte: int = 5,
     symbols: Optional[List[str]] = None
 ) -> OptionsAnalyzer:
@@ -349,7 +353,7 @@ def create_analyzer(
 
     # Trade criteria
     config.trade_criteria.min_prob_profit = min_prob_profit
-    config.trade_criteria.min_weekly_return_pct = min_weekly_return
+    config.trade_criteria.min_trade_return_pct = min_trade_return
     config.trade_criteria.max_dte = max_dte
 
     # Symbols

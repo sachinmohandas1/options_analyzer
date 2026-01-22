@@ -4,7 +4,6 @@ Uses yfinance as the primary data source with abstraction for future providers.
 
 Reliability features:
 - Exponential backoff retry logic
-- Rate limiting to avoid HTTP 429 errors
 - Live risk-free rate and dividend yield fetching
 """
 
@@ -26,60 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Retry and Rate Limiting Infrastructure
+# Retry Infrastructure
 # ============================================================================
-
-class RateLimiter:
-    """
-    Token bucket rate limiter for API calls.
-
-    Prevents HTTP 429 errors during large scans by limiting request rate.
-    """
-
-    def __init__(self, requests_per_second: float = 5.0, burst_size: int = 10):
-        self.rate = requests_per_second
-        self.burst_size = burst_size
-        self.tokens = burst_size
-        self.last_update = time.monotonic()
-        self._lock = threading.Lock()
-
-    def acquire(self, timeout: float = 30.0) -> bool:
-        """
-        Acquire a token, blocking if necessary.
-
-        Returns True if token acquired, False if timeout.
-        """
-        deadline = time.monotonic() + timeout
-
-        while True:
-            with self._lock:
-                now = time.monotonic()
-                # Replenish tokens based on elapsed time
-                elapsed = now - self.last_update
-                self.tokens = min(self.burst_size, self.tokens + elapsed * self.rate)
-                self.last_update = now
-
-                if self.tokens >= 1:
-                    self.tokens -= 1
-                    return True
-
-            # Calculate wait time for next token
-            wait_time = (1 - self.tokens) / self.rate
-            if time.monotonic() + wait_time > deadline:
-                return False
-
-            time.sleep(min(wait_time, 0.1))  # Sleep in small increments
-
-    def reset(self):
-        """Reset the rate limiter to full capacity."""
-        with self._lock:
-            self.tokens = self.burst_size
-            self.last_update = time.monotonic()
-
-
-# Global rate limiter for yfinance API calls
-_api_rate_limiter = RateLimiter(requests_per_second=5.0, burst_size=10)
-
 
 def with_retry(
     max_retries: int = 3,
@@ -105,10 +52,6 @@ def with_retry(
 
             for attempt in range(max_retries + 1):
                 try:
-                    # Acquire rate limit token
-                    if not _api_rate_limiter.acquire(timeout=60.0):
-                        logger.warning("Rate limit timeout, proceeding anyway")
-
                     return func(*args, **kwargs)
 
                 except retryable_exceptions as e:
@@ -731,6 +674,7 @@ class DataFetcher:
         config: AnalyzerConfig,
         provider: Optional[DataProvider] = None,
         use_synthetic_fallback: bool = False,
+        synthetic_only: bool = False,
         sentiment_signals: Optional[Dict[str, Any]] = None
     ):
         self.config = config
@@ -739,12 +683,13 @@ class DataFetcher:
         self._cache_time: Dict[str, datetime] = {}
         self._cache_ttl = timedelta(minutes=5)  # 5-minute cache
 
-        # Synthetic chain fallback
-        self.use_synthetic_fallback = use_synthetic_fallback
+        # Synthetic chain modes
+        self.use_synthetic_fallback = use_synthetic_fallback or synthetic_only
+        self.synthetic_only = synthetic_only  # Skip live data entirely
         self.sentiment_signals = sentiment_signals or {}
         self._synthetic_generator = None
 
-        if use_synthetic_fallback:
+        if self.use_synthetic_fallback:
             self._init_synthetic_generator()
 
     def _init_synthetic_generator(self):
@@ -761,10 +706,11 @@ class DataFetcher:
         """Set sentiment signals for synthetic IV adjustment."""
         self.sentiment_signals = signals
 
-    def enable_synthetic_fallback(self, enabled: bool = True):
+    def enable_synthetic_fallback(self, enabled: bool = True, synthetic_only: bool = False):
         """Enable or disable synthetic chain fallback."""
-        self.use_synthetic_fallback = enabled
-        if enabled and self._synthetic_generator is None:
+        self.use_synthetic_fallback = enabled or synthetic_only
+        self.synthetic_only = synthetic_only
+        if self.use_synthetic_fallback and self._synthetic_generator is None:
             self._init_synthetic_generator()
 
     def fetch_chain(
@@ -790,22 +736,28 @@ class DataFetcher:
                 logger.debug(f"Using cached data for {symbol}")
                 return self._cache[symbol]
 
-        # Fetch fresh data from provider
-        chain = self.provider.get_options_chain(symbol)
+        chain = None
 
-        if chain:
-            self._cache[symbol] = chain
-            self._cache_time[symbol] = datetime.now()
-            return chain
+        # In synthetic_only mode, skip live data fetch entirely
+        if not self.synthetic_only:
+            # Fetch fresh data from provider
+            chain = self.provider.get_options_chain(symbol)
 
-        # Fallback to synthetic chain if enabled
+            if chain:
+                self._cache[symbol] = chain
+                self._cache_time[symbol] = datetime.now()
+                return chain
+
+        # Use synthetic chain if enabled (fallback or synthetic_only mode)
         if allow_synthetic and self.use_synthetic_fallback and self._synthetic_generator:
-            logger.info(f"{symbol}: Live data unavailable, generating synthetic chain")
+            if self.synthetic_only:
+                logger.info(f"{symbol}: Generating synthetic chain (synthetic-only mode)")
+            else:
+                logger.info(f"{symbol}: Live data unavailable, generating synthetic chain")
             sentiment = self.sentiment_signals.get(symbol)
             chain = self._synthetic_generator.generate_chain(symbol, sentiment)
 
             if chain:
-                # Mark as synthetic in the chain (could add a flag to OptionsChain)
                 self._cache[symbol] = chain
                 self._cache_time[symbol] = datetime.now()
                 return chain
