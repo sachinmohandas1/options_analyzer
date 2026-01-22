@@ -1,6 +1,10 @@
 OPTIONS ANALYZER - QUICK START GUIDE
 =====================================
 
+Version 2.0 - Full-featured options analysis with risk metrics, sentiment,
+synthetic chains, quantum ML scoring, and backtesting.
+
+
 INSTALLATION
 ------------
 1. Open terminal and navigate to the options_analyzer folder:
@@ -9,8 +13,10 @@ INSTALLATION
 2. Install dependencies:
    pip install -r requirements.txt
 
-3. (Optional) For faster calculations:
-   pip install py_vollib_vectorized numba
+3. (Optional) For advanced features:
+   pip install py_vollib_vectorized numba   # Faster calculations
+   pip install pennylane                    # Quantum ML scoring
+   pip install transformers torch           # FinBERT sentiment analysis
 
 
 BASIC USAGE
@@ -33,21 +39,53 @@ Export to JSON for further analysis:
 
 COMMAND LINE OPTIONS
 --------------------
--s, --symbols      Symbols to analyze (space separated)
---capital          Total capital available (default: 13000)
---prob             Minimum probability of profit 0-1 (default: 0.70)
---return           Minimum weekly return % (default: 1.0)
---max-dte          Maximum days to expiration (default: 5)
---min-dte          Minimum days to expiration (default: 1)
---max-delta        Maximum delta for short options (default: 0.30)
---max-price        Maximum share price filter (default: 120)
---top              Number of top trades to show (default: 20)
---strategies       Which strategies: csp, put_spread, call_spread
---no-vol           Skip volatility surface analysis (faster)
---full-scan        Scan S&P 500 + Nasdaq 100 + ETFs (~600 symbols)
--i, --interactive  Interactive browsing mode
--v, --verbose      Show additional columns (delta, theta, IV rank)
---json             Output as JSON instead of tables
+Core Options:
+  -s, --symbols      Symbols to analyze (space separated)
+  --capital          Total capital available (default: 13000)
+  --prob             Minimum probability of profit 0-1 (default: 0.70)
+  --return           Minimum weekly return % (default: 1.0)
+  --max-dte          Maximum days to expiration (default: 5)
+  --min-dte          Minimum days to expiration (default: 1)
+  --max-delta        Maximum delta for short options (default: 0.30)
+  --max-price        Maximum share price filter (optional, no default)
+  --top              Number of top trades to show (default: 20)
+  --strategies       Which strategies: csp, put_spread, call_spread, iron_condor
+  --no-vol           Skip volatility surface analysis (faster)
+  --full-scan        Scan S&P 500 + Nasdaq 100 + ETFs (~600 symbols)
+  -i, --interactive  Interactive browsing mode
+  -v, --verbose      Show additional columns (delta, theta, IV rank)
+  --json             Output as JSON instead of tables
+
+Synthetic Chain Generation (for after-hours analysis):
+  --synthetic        Enable synthetic chain fallback when live data unavailable
+  --synthetic-only   Use only synthetic chains (ignore live data)
+  --refresh-iv       Refresh IV surface cache (run during market hours)
+
+Sentiment Analysis:
+  --sentiment            Enable news sentiment analysis (uses FinBERT)
+  --sentiment-lookback   Hours of news to analyze (default: 48)
+
+Quantum ML Scoring:
+  --qml              Enable quantum ML scoring (auto-trains on backtest data)
+  --qml-months       Months of training data (default: 12)
+  --qml-retrain      Force model retraining (ignore cache)
+
+Backtesting:
+  --backtest         Run backtest mode
+  --start-date       Backtest start date (YYYY-MM-DD)
+  --end-date         Backtest end date (YYYY-MM-DD)
+  --profit-target    Exit at fraction of max profit (default: 0.5 = 50%)
+  --stop-loss        Exit at multiple of premium as loss (default: 2.0)
+  --max-positions    Maximum concurrent positions (default: 5)
+
+Diversified Scaling Backtest:
+  --backtest-diversified  Run diversified scaling strategy backtest
+  --base-positions        Base number of positions (default: 5)
+  --max-collateral        Max collateral per position (default: $2000)
+  --scaling-threshold     Profit threshold to add position (default: $2000)
+  --target-return         Target weekly return % (default: 10)
+  --target-pop            Target probability of profit (default: 0.90)
+  --relaxation-tiers      Return % tiers to try (default: 10 8 6 4)
 
 
 UNDERSTANDING THE OUTPUT
@@ -65,30 +103,114 @@ The main table shows:
 
 Green = good, Yellow = acceptable, Red = below threshold
 
+With -v (verbose), you'll also see:
+- Delta: Net delta exposure
+- Theta: Daily time decay working for you
+- IV Rank: Current IV vs 52-week range (higher = better for selling)
 
-EXAMPLE WORKFLOW
-----------------
-1. Run analysis:
+
+NEW IN VERSION 2.0
+------------------
+Risk Metrics:
+  - Earnings calendar integration (warns about earnings before expiration)
+  - CVaR (Conditional Value at Risk) for tail risk assessment
+  - Liquidity scoring based on bid-ask spread, volume, and open interest
+  - Live 10-year Treasury rate for Greeks calculations
+
+Reliability:
+  - Token bucket rate limiting to avoid API throttling
+  - Exponential backoff retry for transient failures
+  - Singleton caching to avoid duplicate API calls
+  - Pre-fetching of risk data for faster analysis
+
+Scoring:
+  - Enhanced scoring system with risk-adjusted multipliers
+  - Earnings proximity penalty (50% for earnings before expiration)
+  - High CVaR penalty (scales with tail risk)
+  - Liquidity bonus for highly liquid options
+
+
+EXAMPLE WORKFLOWS
+-----------------
+
+1. Basic Daily Scan:
    python main.py -s IWM SLV EEM --top 10
 
-2. Review the top candidates table
+   - Review the top candidates table
+   - Check volatility insights section
+   - Place trades through your broker
 
-3. For more detail on a specific trade, use interactive mode:
-   python main.py -s IWM SLV EEM -i
-   Then enter the trade number to see full details
+2. After-Hours Analysis (when market is closed):
+   python main.py --synthetic -s SPY QQQ IWM
 
-4. Check the volatility insights section for market context
+   - Uses cached IV surfaces and Black-Scholes pricing
+   - Run --refresh-iv during market hours to update cache
 
-5. Place your trade through your broker
+3. Full Market Scan with Sentiment:
+   python main.py --full-scan --sentiment --top 30
+
+   - Scans ~600 symbols from S&P 500, Nasdaq 100, and ETFs
+   - Filters high-risk symbols based on negative news
+   - Takes 10-15 minutes
+
+4. Backtest a Strategy:
+   python main.py --backtest --start-date 2024-01-01 --end-date 2025-01-01 -s SPY QQQ IWM
+
+   - Shows win rate, total P&L, max drawdown
+   - Useful for tuning criteria before live trading
+
+5. Interactive Exploration:
+   python main.py -i -v
+
+   - Browse results interactively
+   - Enter trade number to see full details
+   - Press 'r' to refresh data
+
+6. With Quantum ML Scoring:
+   python main.py --qml --qml-months 12 -s SPY QQQ IWM
+
+   - Auto-trains on backtest data
+   - Adjusts scores based on pattern recognition
+   - Requires PennyLane: pip install pennylane
 
 
 TIPS
 ----
 - Run the analyzer when markets are open for live option prices
-- The analyzer automatically filters symbols above $120 (configurable)
+- Use --synthetic flag after hours for theoretical prices
 - Focus on symbols with lower share prices for cash-secured puts
 - Credit spreads work on any symbol regardless of price
 - Higher IV rank (>50%) is generally better for selling premium
 - Watch for "backwardation" warnings - indicates expected volatility
-- Use --max-price 80 to filter to even cheaper symbols
-- Use --full-scan for comprehensive market coverage (takes 5-10 minutes)
+- Use --max-price 80 to filter to cheaper symbols
+- Use --full-scan for comprehensive market coverage (takes 10-15 minutes)
+- Enable --sentiment to filter out stocks with negative news
+- Use --qml for pattern-based scoring (requires training data)
+- Check CONFIGURATION.txt for tuning parameters
+
+
+TROUBLESHOOTING
+---------------
+
+"No candidates found":
+  - Check if market is open (use --synthetic after hours)
+  - Try relaxing criteria: --prob 0.65 --return 0.8
+  - Use --full-scan to search more symbols
+
+"Rate limited / timeout errors":
+  - Built-in rate limiting should handle most cases
+  - If persistent, wait a few minutes and retry
+  - Run fewer symbols at once
+
+"Missing Greeks / IV data":
+  - Normal for very illiquid options
+  - The analyzer will skip these contracts
+
+"QML training failed":
+  - Ensure PennyLane is installed: pip install pennylane
+  - Need sufficient backtest data (try --qml-months 6)
+
+"Sentiment analysis slow":
+  - First run downloads FinBERT model (~400MB)
+  - Subsequent runs use cached model
+  - Reduce --sentiment-lookback for faster analysis
