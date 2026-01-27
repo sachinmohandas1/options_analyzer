@@ -91,29 +91,48 @@ class EarningsCalendar:
             finally:
                 yf_logger.setLevel(original_level)
 
-            if calendar is None or calendar.empty:
+            # Handle None or empty calendar
+            if calendar is None:
                 self._no_earnings_cache[symbol] = now
                 return None
 
-            # yfinance returns calendar as DataFrame with earnings date
+            # Check for empty - dict or DataFrame
+            if isinstance(calendar, dict):
+                if not calendar:
+                    self._no_earnings_cache[symbol] = now
+                    return None
+            elif hasattr(calendar, 'empty') and calendar.empty:
+                self._no_earnings_cache[symbol] = now
+                return None
+
+            # yfinance returns calendar as dict (newer) or DataFrame (older)
             # Format varies - try multiple access patterns
             earnings_date = None
 
-            if hasattr(calendar, 'T') and 'Earnings Date' in calendar.T.columns:
+            # New format: dict with 'Earnings Date' as list of dates
+            if isinstance(calendar, dict) and 'Earnings Date' in calendar:
+                ed = calendar['Earnings Date']
+                # Handle list of dates (new yfinance format)
+                if isinstance(ed, list) and len(ed) > 0:
+                    earnings_date = ed[0]
+                else:
+                    earnings_date = ed
+            # Old DataFrame formats
+            elif hasattr(calendar, 'T') and 'Earnings Date' in calendar.T.columns:
                 earnings_dates = calendar.T['Earnings Date'].values
                 if len(earnings_dates) > 0:
                     earnings_date = earnings_dates[0]
-            elif 'Earnings Date' in calendar.index:
+            elif hasattr(calendar, 'index') and 'Earnings Date' in calendar.index:
                 earnings_date = calendar.loc['Earnings Date'].values[0]
-            elif isinstance(calendar, dict) and 'Earnings Date' in calendar:
-                earnings_date = calendar['Earnings Date']
 
             if earnings_date is None:
                 self._no_earnings_cache[symbol] = now
                 return None
 
-            # Convert to date
-            if hasattr(earnings_date, 'date'):
+            # Convert to date object if needed
+            if isinstance(earnings_date, date) and not isinstance(earnings_date, datetime):
+                pass  # Already a date object
+            elif hasattr(earnings_date, 'date'):
                 earnings_date = earnings_date.date()
             elif isinstance(earnings_date, str):
                 earnings_date = datetime.strptime(earnings_date[:10], '%Y-%m-%d').date()

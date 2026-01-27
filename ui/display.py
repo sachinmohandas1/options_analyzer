@@ -34,6 +34,16 @@ def format_percent(value: float, decimals: int = 2) -> str:
     return f"{value * 100:.{decimals}f}%"
 
 
+def format_strike(strike: float) -> str:
+    """Format strike price, showing decimal only when needed."""
+    if strike % 1 == 0:
+        return f"{strike:.0f}"
+    elif strike % 0.5 == 0:
+        return f"{strike:.1f}"
+    else:
+        return f"{strike:.2f}"
+
+
 def color_by_value(value: float, threshold: float = 0, invert: bool = False) -> str:
     """Return color based on value."""
     if invert:
@@ -109,14 +119,12 @@ def display_candidates_table(
         table.add_column("Theta", justify="right")
         table.add_column("IV Rank", justify="right")
 
+    # Track if any candidates have earnings warnings
+    has_earnings_warnings = False
+
     for i, c in enumerate(candidates, 1):
-        # Format strikes
-        if len(c.legs) == 1:
-            strikes = f"{c.legs[0].strike:.0f}"
-        elif len(c.legs) == 2:
-            strikes = f"{c.legs[0].strike:.0f}/{c.legs[1].strike:.0f}"
-        else:
-            strikes = "/".join([f"{leg.strike:.0f}" for leg in c.legs])
+        # Format strikes (show decimals when needed to distinguish different spreads)
+        strikes = "/".join(format_strike(leg.strike) for leg in c.legs)
 
         # Color trade return (per-trade return percentage)
         trade_ret = c.trade_return_pct / 100  # Convert from percentage to decimal for format_percent
@@ -136,10 +144,23 @@ def display_candidates_table(
         score_color = "green" if c.overall_score >= 60 else "yellow" if c.overall_score >= 40 else "white"
         score_str = f"[{score_color}]{c.overall_score:.0f}[/{score_color}]"
 
+        # Check for earnings before expiration
+        earnings_in_window = False
+        if hasattr(c, '_risk_metrics') and c._risk_metrics is not None:
+            earnings_in_window = c._risk_metrics.earnings_in_trade_window
+        elif hasattr(c, '_earnings_risk') and c._earnings_risk == "high":
+            earnings_in_window = True
+
+        # Add asterisk to symbol if earnings occur before expiration
+        symbol_display = c.underlying_symbol
+        if earnings_in_window:
+            symbol_display = f"[yellow]{c.underlying_symbol}*[/yellow]"
+            has_earnings_warnings = True
+
         row = [
             str(i),
             c.strategy_name,
-            c.underlying_symbol,
+            symbol_display,
             str(c.dte),
             strikes,
             format_currency(c.premium_received),
@@ -180,6 +201,10 @@ def display_candidates_table(
     if show_qml:
         console.print("[dim]QML Δ: Score change from quantum model ([green]+[/green] = QML boost, [red]-[/red] = QML penalty)[/dim]")
 
+    # Show earnings warning legend if any candidates have earnings in window
+    if has_earnings_warnings:
+        console.print("[yellow]*[/yellow] [dim]Earnings report expected before trade expiration[/dim]")
+
     console.print()
 
 
@@ -196,7 +221,7 @@ def display_trade_detail(candidate: TradeCandidate, allocation: Optional[Positio
     for i, leg in enumerate(candidate.legs, 1):
         action = "SELL" if i % 2 == 1 else "BUY"  # Odd = short, Even = long for spreads
         leg_type = "Put" if leg.option_type.value == "put" else "Call"
-        console.print(f"  Leg {i}: {action} {leg.strike:.0f} {leg_type} @ ${leg.bid:.2f}/{leg.ask:.2f}")
+        console.print(f"  Leg {i}: {action} {format_strike(leg.strike)} {leg_type} @ ${leg.bid:.2f}/{leg.ask:.2f}")
 
     console.print()
 
