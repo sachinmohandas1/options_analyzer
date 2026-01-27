@@ -697,17 +697,24 @@ def main():
         console.print()
 
     # Run analysis
+    # In scan mode (no explicit -s symbols), limit to 3 recommendations per symbol for diversity
+    # When user specifies symbols with -s, show all matches without limit
+    is_scan_mode = args.symbols is None
+    per_symbol_limit = 3 if is_scan_mode else None
+
     if not args.json:
         status_msg = "[bold green]Full market scan in progress..." if args.full_scan else "[bold green]Analyzing options chains..."
         with console.status(status_msg) as status:
             result = analyzer.run_analysis(
                 include_volatility_analysis=not args.no_vol,
-                full_scan=args.full_scan
+                full_scan=args.full_scan,
+                limit_per_symbol=per_symbol_limit
             )
     else:
         result = analyzer.run_analysis(
             include_volatility_analysis=not args.no_vol,
-            full_scan=args.full_scan
+            full_scan=args.full_scan,
+            limit_per_symbol=per_symbol_limit
         )
 
     # Apply QML scoring if enabled

@@ -75,6 +75,9 @@ class CachedIVSurface:
     # IV rank at cache time (for context)
     iv_rank: Optional[float] = None
 
+    # Real strike prices from the actual options chain (for synthetic chain matching)
+    real_strikes: List[float] = field(default_factory=list)
+
     def get_iv_for_strike_dte(
         self,
         strike: float,
@@ -141,6 +144,7 @@ class CachedIVSurface:
             'term_slope': self.term_slope,
             'historical_vol': self.historical_vol,
             'iv_rank': self.iv_rank,
+            'real_strikes': self.real_strikes,
         }
 
     @classmethod
@@ -156,6 +160,7 @@ class CachedIVSurface:
             term_slope=data.get('term_slope', 0.0001),
             historical_vol=data.get('historical_vol'),
             iv_rank=data.get('iv_rank'),
+            real_strikes=data.get('real_strikes', []),
         )
 
 
@@ -266,8 +271,8 @@ class SyntheticChainGenerator:
                 logger.warning(f"{symbol}: No valid expirations in range")
                 return None
 
-            # 5. Generate strikes
-            strikes = self._generate_strikes(current_price)
+            # 5. Generate strikes (use real strikes from cached IV surface if available)
+            strikes = self._generate_strikes(current_price, iv_surface)
 
             # 6. Generate option contracts
             all_calls = []
@@ -426,6 +431,7 @@ class SyntheticChainGenerator:
             all_call_ivs = []
             all_put_moneyness = []
             all_call_moneyness = []
+            all_strikes: set = set()  # Collect real strikes from the chain
 
             today = date.today()
 
@@ -444,6 +450,11 @@ class SyntheticChainGenerator:
 
                     if not all_options:
                         continue
+
+                    # Collect all real strike prices from the chain
+                    for opt in all_options:
+                        if hasattr(opt, 'strike') and opt.strike > 0:
+                            all_strikes.add(float(opt.strike))
 
                     # Get ATM IV
                     atm_options = [
@@ -515,6 +526,9 @@ class SyntheticChainGenerator:
             # Calculate IV rank
             iv_rank = self._calculate_iv_rank(ticker, list(atm_iv_by_dte.values())[0] if atm_iv_by_dte else 0.25)
 
+            # Sort and store real strikes for synthetic chain generation
+            real_strikes = sorted(all_strikes)
+
             surface = CachedIVSurface(
                 symbol=symbol,
                 underlying_price=current_price,
@@ -525,11 +539,13 @@ class SyntheticChainGenerator:
                 term_slope=term_slope,
                 historical_vol=hist_vol,
                 iv_rank=iv_rank,
+                real_strikes=real_strikes,
             )
 
             logger.info(
                 f"{symbol}: Built IV surface - ATM IV: {list(atm_iv_by_dte.values())[0]:.1%}, "
-                f"Put skew: {skew_put:.4f}, Call skew: {skew_call:.4f}"
+                f"Put skew: {skew_put:.4f}, Call skew: {skew_call:.4f}, "
+                f"Real strikes: {len(real_strikes)}"
             )
 
             return surface
@@ -684,14 +700,47 @@ class SyntheticChainGenerator:
 
         return sorted(expirations)
 
-    def _generate_strikes(self, current_price: float) -> List[float]:
-        """Generate strike prices around current price."""
-        strikes = []
+    def _generate_strikes(
+        self,
+        current_price: float,
+        iv_surface: Optional[CachedIVSurface] = None
+    ) -> List[float]:
+        """
+        Generate strike prices around current price.
+
+        If iv_surface has cached real strikes from the actual options chain,
+        use those (filtered to the configured range) to ensure synthetic trades
+        match real available strikes. Falls back to generated strikes if no
+        real strikes are cached.
+        """
         cfg = self.synthetic_config
 
-        # Calculate strike range
+        # Calculate strike range bounds
         lower_bound = current_price * (1 - cfg.strike_range_pct)
         upper_bound = current_price * (1 + cfg.strike_range_pct)
+
+        # Prefer real strikes from cached IV surface if available
+        if iv_surface and iv_surface.real_strikes:
+            # Filter real strikes to the configured range around current price
+            filtered_strikes = [
+                s for s in iv_surface.real_strikes
+                if lower_bound <= s <= upper_bound
+            ]
+
+            if filtered_strikes:
+                logger.debug(
+                    f"Using {len(filtered_strikes)} real strikes "
+                    f"(from {len(iv_surface.real_strikes)} cached)"
+                )
+                return sorted(filtered_strikes)
+            else:
+                logger.warning(
+                    f"No cached real strikes in range "
+                    f"${lower_bound:.2f}-${upper_bound:.2f}, falling back to generated strikes"
+                )
+
+        # Fallback: generate synthetic strikes
+        strikes = []
 
         # Calculate spacing
         spacing = max(

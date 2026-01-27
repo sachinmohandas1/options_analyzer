@@ -156,7 +156,8 @@ class OptionsAnalyzer:
         self,
         symbols: Optional[List[str]] = None,
         include_volatility_analysis: bool = True,
-        full_scan: bool = False
+        full_scan: bool = False,
+        limit_per_symbol: Optional[int] = None
     ) -> AnalysisResult:
         """
         Run complete analysis pipeline.
@@ -165,6 +166,7 @@ class OptionsAnalyzer:
             symbols: Optional list of symbols to analyze (uses config if None)
             include_volatility_analysis: Whether to perform vol surface analysis
             full_scan: If True, scan S&P 500 + Nasdaq 100 + ETFs (~600 symbols)
+            limit_per_symbol: Max recommendations per symbol (None = no limit)
 
         Returns:
             AnalysisResult containing all findings
@@ -262,6 +264,19 @@ class OptionsAnalyzer:
             key=lambda x: x.overall_score,
             reverse=True
         )
+
+        # 6a. Apply per-symbol limit if specified (for scan mode diversity)
+        if limit_per_symbol is not None and limit_per_symbol > 0:
+            symbol_counts: Dict[str, int] = {}
+            limited_candidates = []
+            for candidate in sorted_candidates:
+                sym = candidate.underlying_symbol
+                count = symbol_counts.get(sym, 0)
+                if count < limit_per_symbol:
+                    limited_candidates.append(candidate)
+                    symbol_counts[sym] = count + 1
+            sorted_candidates = limited_candidates
+
         result.top_candidates = sorted_candidates[:self.config.top_n_trades]
 
         # 7. Calculate deployable capital

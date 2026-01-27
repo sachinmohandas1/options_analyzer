@@ -47,8 +47,8 @@ class CapitalConfig:
     """Capital and position sizing configuration."""
     total_capital: float = 13000.0
     max_single_position_pct: float = 0.25
-    max_total_exposure_pct: float = 0.80
-    reserve_cash_pct: float = 0.20
+    max_total_exposure_pct: float = 1.0
+    reserve_cash_pct: float = 0.0
     max_concurrent_positions: int = 10
     max_positions_per_underlying: int = 2
 
