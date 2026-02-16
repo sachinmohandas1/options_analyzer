@@ -240,7 +240,7 @@ Most criteria can be set via CLI without editing config.py:
 
   --capital 15000           # Override total_capital
   --prob 0.75               # Override min_prob_profit
-  --return 1.5              # Override min_trade_return_pct
+  --return 0.015            # Override min_trade_return_pct (decimal, 0.015 = 1.5%)
   --max-dte 3               # Override max_dte
   --min-dte 2               # Override min_dte
   --max-delta 0.25          # Override max_delta

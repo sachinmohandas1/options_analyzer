@@ -47,7 +47,7 @@ python main.py
 python main.py -s SPY QQQ IWM
 
 # Custom criteria
-python main.py --capital 25000 --prob 0.75 --return 1.5 --max-dte 3
+python main.py --capital 25000 --prob 0.75 --return 0.015 --max-dte 3
 
 # Interactive mode
 python main.py -i
@@ -63,7 +63,7 @@ python main.py --json > results.json
 | `-s, --symbols` | Major ETFs | Symbols to analyze |
 | `--capital` | 13000 | Total capital available |
 | `--prob` | 0.70 | Minimum probability of profit |
-| `--return` | 1.0 | Minimum trade return % |
+| `--return` | 0.01 | Minimum trade return (decimal, e.g. 0.01 = 1%) |
 | `--max-dte` | 5 | Maximum days to expiration |
 | `--min-dte` | 1 | Minimum days to expiration |
 | `--max-delta` | 0.30 | Maximum delta for short options |

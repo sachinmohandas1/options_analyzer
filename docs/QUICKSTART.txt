@@ -28,7 +28,7 @@ Analyze specific symbols only:
    python main.py -s IWM SLV EEM XLF
 
 Set custom criteria:
-   python main.py --capital 15000 --prob 0.75 --return 1.5 --max-dte 3
+   python main.py --capital 15000 --prob 0.75 --return 0.015 --max-dte 3
 
 Interactive mode (browse and explore trades):
    python main.py -i
@@ -43,7 +43,7 @@ Core Options:
   -s, --symbols      Symbols to analyze (space separated)
   --capital          Total capital available (default: 13000)
   --prob             Minimum probability of profit 0-1 (default: 0.70)
-  --return           Minimum trade return % (default: 1.0)
+  --return           Minimum trade return as decimal (default: 0.01 = 1%)
   --max-dte          Maximum days to expiration (default: 5)
   --min-dte          Minimum days to expiration (default: 1)
   --max-delta        Maximum delta for short options (default: 0.30)
@@ -193,7 +193,7 @@ TROUBLESHOOTING
 
 "No candidates found":
   - Check if market is open (use --synthetic after hours)
-  - Try relaxing criteria: --prob 0.65 --return 0.8
+  - Try relaxing criteria: --prob 0.65 --return 0.008
   - Use --full-scan to search more symbols
 
 "Timeout errors":
