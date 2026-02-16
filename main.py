@@ -42,6 +42,14 @@ def setup_logging(verbose: bool = False):
     # Reduce noise from third-party libraries
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('yfinance').setLevel(logging.WARNING)
+    logging.getLogger('peewee').setLevel(logging.WARNING)
+    logging.getLogger('filelock').setLevel(logging.WARNING)
+
+    # In non-verbose mode, reduce internal module noise too
+    if not verbose:
+        logging.getLogger('analysis.volatility_surface').setLevel(logging.WARNING)
+        logging.getLogger('data.fetcher').setLevel(logging.WARNING)
+        logging.getLogger('analyzer').setLevel(logging.WARNING)
 
 
 def parse_args():
@@ -54,7 +62,7 @@ Examples:
   python main.py                         # Run with defaults
   python main.py -s SPY QQQ IWM          # Analyze specific symbols
   python main.py --capital 25000         # Set capital to $25,000
-  python main.py --prob 0.75 --return 1.5 # 75% prob, 1.5% trade return
+  python main.py --prob 0.75 --return 0.015 # 75% prob, 1.5% trade return
   python main.py --max-dte 3             # Only look at 3 DTE or less
   python main.py --no-vol                # Skip volatility analysis
   python main.py -v                      # Verbose output
@@ -84,9 +92,9 @@ Examples:
     parser.add_argument(
         '--return',
         type=float,
-        default=1.0,
+        default=0.01,
         dest='min_return',
-        help='Minimum trade return %% (default: 1.0 = 1%%)'
+        help='Minimum trade return (default: 0.01 = 1%%)'
     )
 
     parser.add_argument(
@@ -392,7 +400,7 @@ def run_backtest(args):
     # Build config
     trade_criteria = TradeCriteria(
         min_prob_profit=args.prob,
-        min_trade_return_pct=args.min_return,
+        min_trade_return_pct=args.min_return * 100,
         max_dte=args.max_dte,
         min_dte=args.min_dte,
         max_delta=args.max_delta,
@@ -579,7 +587,7 @@ def main():
     config = AnalyzerConfig()
     config.capital.total_capital = args.capital
     config.trade_criteria.min_prob_profit = args.prob
-    config.trade_criteria.min_trade_return_pct = args.min_return
+    config.trade_criteria.min_trade_return_pct = args.min_return * 100
     config.trade_criteria.max_dte = args.max_dte
     config.trade_criteria.min_dte = args.min_dte
     config.trade_criteria.max_delta = args.max_delta

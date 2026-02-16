@@ -188,8 +188,8 @@ def display_candidates_table(
 
         if show_all_columns:
             row.extend([
-                f"{c.net_delta:.3f}",
-                f"${c.net_theta:.2f}",
+                f"{'-' if c.net_delta < 0 else ''}${abs(c.net_delta) * 100:.2f}",
+                f"${c.net_theta * 100:.2f}",
                 f"{c.iv_rank:.0f}%" if c.iv_rank else "N/A",
             ])
 
@@ -270,9 +270,9 @@ def display_trade_detail(candidate: TradeCandidate, allocation: Optional[Positio
     greeks_table.add_column("Greek", style="cyan", width=12)
     greeks_table.add_column("Value", justify="right", width=12)
 
-    greeks_table.add_row("Delta", f"{candidate.net_delta:.4f}")
+    greeks_table.add_row("Delta", f"{'-' if candidate.net_delta < 0 else ''}${abs(candidate.net_delta) * 100:.2f}")
     greeks_table.add_row("Gamma", f"{candidate.net_gamma:.4f}")
-    greeks_table.add_row("Theta", f"${candidate.net_theta:.2f}/day")
+    greeks_table.add_row("Theta", f"${candidate.net_theta * 100:.2f}/day")
     greeks_table.add_row("Vega", f"${candidate.net_vega:.2f}")
 
     console.print(greeks_table)

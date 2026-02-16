@@ -181,7 +181,7 @@ class MarketDataCache:
                 try:
                     info = ticker.info
                     if 'dividendYield' in info and info['dividendYield']:
-                        div_yield = float(info['dividendYield'])
+                        div_yield = float(info['dividendYield']) / 100  # yfinance returns as percentage
                     elif 'trailingAnnualDividendYield' in info and info['trailingAnnualDividendYield']:
                         div_yield = float(info['trailingAnnualDividendYield'])
                 except Exception:
@@ -557,7 +557,10 @@ class YFinanceProvider:
 
         for _, row in df.iterrows():
             try:
-                # Extract data with defaults for missing values
+                # Handle NaN values - pd.notna() is the safe way to check
+                volume_val = row.get('volume', 0)
+                oi_val = row.get('openInterest', 0)
+
                 contract = OptionContract(
                     symbol=row.get('contractSymbol', ''),
                     underlying_symbol=symbol,
@@ -568,8 +571,8 @@ class YFinanceProvider:
                     bid=float(row.get('bid', 0) or 0),
                     ask=float(row.get('ask', 0) or 0),
                     last_price=float(row.get('lastPrice', 0) or 0),
-                    volume=int(row.get('volume', 0) or 0),
-                    open_interest=int(row.get('openInterest', 0) or 0),
+                    volume=int(volume_val) if pd.notna(volume_val) else 0,
+                    open_interest=int(oi_val) if pd.notna(oi_val) else 0,
                     implied_volatility=float(row.get('impliedVolatility', 0) or 0),
                 )
 

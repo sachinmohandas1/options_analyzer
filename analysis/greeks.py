@@ -352,7 +352,7 @@ class GreeksCalculator:
             # (Greeks are similar for American and European for short-dated options)
             contract.delta = bs_delta(flag, S, K, t, r, sigma)
             contract.gamma = bs_gamma(flag, S, K, t, r, sigma)
-            contract.theta = bs_theta(flag, S, K, t, r, sigma) * 365  # Annualize then daily
+            contract.theta = bs_theta(flag, S, K, t, r, sigma)  # Already per-share per-day
             contract.vega = bs_vega(flag, S, K, t, r, sigma)
             contract.rho = bs_rho(flag, S, K, t, r, sigma)
 

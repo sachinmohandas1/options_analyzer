@@ -8,6 +8,7 @@ Constructs and analyzes implied volatility surfaces to identify:
 - Trading signals based on surface shape
 """
 
+import warnings
 import numpy as np
 import pandas as pd
 from scipy import interpolate
@@ -16,6 +17,9 @@ from datetime import date, datetime
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 import logging
+
+# Suppress Qhull warnings - these occur when IV surface data is too sparse/flat
+warnings.filterwarnings('ignore', message='.*QH.*')
 
 from core.models import OptionsChain, VolatilitySurface, OptionContract, OptionType
 from core.config import VolatilitySurfaceConfig, AnalyzerConfig
@@ -246,8 +250,10 @@ class VolatilitySurfaceAnalyzer:
 
         except Exception as e:
             # Surface interpolation can fail with insufficient data points
-            # (e.g., only 1 expiration). This is non-critical - silently skip
-            logger.debug(f"Could not interpolate surface: {e}")
+            # (e.g., only 1 expiration, flat surface). This is non-critical.
+            # Only log first line to avoid Qhull's verbose diagnostics
+            error_first_line = str(e).split('\n')[0]
+            logger.debug(f"Could not interpolate surface: {error_first_line}")
 
     def _detect_anomalies(
         self,
